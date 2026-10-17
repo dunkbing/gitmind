@@ -51,7 +51,7 @@ func TestWriteSearchEditDelete(t *testing.T) {
 	ctx := context.Background()
 	a := machine(t, "", "laptop")
 
-	rel, created, err := a.Write(ctx, "Deploy checklist", "My App", "- [gotcha] run migrations before restarting #db", []string{"#Ops"})
+	rel, created, err := a.Write(ctx, "Deploy checklist", "My App", "- [gotcha] run migrations before restarting #db", []string{"#Ops"}, false)
 	if err != nil || !created || rel != "my-app/deploy-checklist.md" {
 		t.Fatalf("Write = %q, %v, %v", rel, created, err)
 	}
@@ -81,7 +81,7 @@ func TestWriteSearchEditDelete(t *testing.T) {
 	}
 
 	// Rewriting keeps created and tags.
-	if _, created, err := a.Write(ctx, "Deploy checklist", "my-app", "replaced", nil); err != nil || created {
+	if _, created, err := a.Write(ctx, "Deploy checklist", "my-app", "replaced", nil, true); err != nil || created {
 		t.Fatalf("rewrite: created=%v err=%v", created, err)
 	}
 	n2, _, _ := a.Store.Read(rel)
@@ -89,7 +89,7 @@ func TestWriteSearchEditDelete(t *testing.T) {
 		t.Fatalf("rewrite lost metadata: %#v", n2)
 	}
 
-	if _, _, err := a.Write(ctx, "Keys", "", "OPENAI_API_KEY=sk-proj-abcdefghijklmnopqrstuvwx", nil); err == nil {
+	if _, _, err := a.Write(ctx, "Keys", "", "OPENAI_API_KEY=sk-proj-abcdefghijklmnopqrstuvwx", nil, false); err == nil {
 		t.Fatal("secret was saved")
 	}
 
@@ -110,7 +110,7 @@ func TestSyncBetweenMachines(t *testing.T) {
 	laptop := machine(t, remote, "laptop")
 	desktop := machine(t, remote, "desktop")
 
-	if _, _, err := laptop.Write(ctx, "Preferences", "general", "- [preference] use pnpm over npm", nil); err != nil {
+	if _, _, err := laptop.Write(ctx, "Preferences", "general", "- [preference] use pnpm over npm", nil, false); err != nil {
 		t.Fatal(err)
 	}
 	mustSync(t, laptop)

@@ -28,7 +28,7 @@ var version = "0.1.0-dev"
 const usage = `memory-go: git-backed memory for coding agents
 
 Usage:
-  memory-go [--dir DIR] [command] [args]
+  memory-go [--dir DIR] [--sync-interval 3m] [command] [args]
 
 Commands:
   serve              run the MCP server on stdio (default)
@@ -48,6 +48,7 @@ func main() {
 	log.SetPrefix("memory-go: ")
 	flag.Usage = func() { fmt.Fprint(os.Stderr, usage) }
 	dir := flag.String("dir", defaultDir(), "notes repository directory")
+	interval := flag.Duration("sync-interval", 3*time.Minute, "how often serve syncs in the background (0: only at startup)")
 	flag.Parse()
 
 	cmd, args := "serve", flag.Args()
@@ -60,7 +61,7 @@ func main() {
 	var err error
 	switch cmd {
 	case "serve":
-		err = serve(ctx, *dir)
+		err = serve(ctx, *dir, *interval)
 	case "init":
 		err = initRepo(ctx, *dir, args)
 	case "sync":
@@ -102,7 +103,7 @@ func main() {
 	}
 }
 
-func serve(ctx context.Context, dir string) error {
+func serve(ctx context.Context, dir string, interval time.Duration) error {
 	if !gitsync.IsRepo(dir) {
 		log.Printf("creating a local notes repository at %s; run `memory-go init REMOTE` to sync it", dir)
 		if err := gitsync.Init(ctx, dir, ""); err != nil {
@@ -114,15 +115,7 @@ func serve(ctx context.Context, dir string) error {
 		return err
 	}
 	defer app.Close()
-
-	syncCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
-	if res, err := app.Sync(syncCtx); err != nil {
-		log.Printf("startup sync failed, continuing with local notes: %v", err)
-	} else if len(res.Conflicts) > 0 {
-		log.Print(res)
-	}
-	cancel()
-
+	app.StartAutoSync(interval)
 	return server.New(app, version).Run(ctx, &mcp.StdioTransport{})
 }
 

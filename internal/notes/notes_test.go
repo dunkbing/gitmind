@@ -49,7 +49,12 @@ func TestSlugifyAndCleanDir(t *testing.T) {
 	for in, want := range map[string]string{
 		"Deploy: steps & gotchas": "deploy-steps-gotchas",
 		"  Hello   World  ":       "hello-world",
-		"Tiếng Việt":              "tiếng-việt",
+		"Tiếng Việt":              "tieng-viet",
+		"Đà Nẵng đường phố":       "da-nang-duong-pho",
+		"Straße & Øl":             "strasse-ol",
+		"Café (decomposed)":      "cafe-decomposed",
+		"東京 notes":                "東京-notes",
+		"한국어":                     "한국어",
 		"!!!":                     "note",
 	} {
 		if got := Slugify(in); got != want {

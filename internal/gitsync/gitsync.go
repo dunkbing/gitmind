@@ -16,7 +16,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"syscall"
+
+	"github.com/dunkbing/memory-go/internal/lockfile"
 )
 
 type Repo struct{ Dir string }
@@ -154,16 +155,33 @@ func (r *Repo) commit(ctx context.Context, msg string, paths ...string) (bool, e
 	if len(paths) == 0 {
 		paths = []string{"."}
 	}
+	// A merge left unfinished (e.g. a sync killed mid-pull) blocks every later
+	// pull, so conclude it, keeping whatever is in the working tree.
+	merging := r.merging(ctx)
+	if merging {
+		paths = []string{"."}
+	}
 	if _, err := r.run(ctx, append([]string{"add", "-A", "--"}, paths...)...); err != nil {
 		return false, err
 	}
-	if _, err := r.run(ctx, "diff", "--cached", "--quiet"); err == nil {
-		return false, nil
-	} else if !isExitCode(err, 1) {
-		return false, err
+	args := append(r.identity(ctx), "commit", "-q")
+	if merging {
+		args = append(args, "--no-edit")
+	} else {
+		if _, err := r.run(ctx, "diff", "--cached", "--quiet"); err == nil {
+			return false, nil
+		} else if !isExitCode(err, 1) {
+			return false, err
+		}
+		args = append(args, "-m", msg)
 	}
-	_, err := r.run(ctx, append(r.identity(ctx), "commit", "-q", "-m", msg)...)
+	_, err := r.run(ctx, args...)
 	return err == nil, err
+}
+
+func (r *Repo) merging(ctx context.Context) bool {
+	_, err := r.run(ctx, "rev-parse", "-q", "--verify", "MERGE_HEAD")
+	return err == nil
 }
 
 func (r *Repo) pull(ctx context.Context) (bool, []string, error) {
@@ -185,10 +203,7 @@ func (r *Repo) pull(ctx context.Context) (bool, []string, error) {
 		if len(conflicts) == 0 {
 			return false, nil, err
 		}
-		if _, err := r.run(ctx, "add", "-A"); err != nil {
-			return false, conflicts, err
-		}
-		if _, err := r.run(ctx, append(r.identity(ctx), "commit", "-q", "--no-edit")...); err != nil {
+		if _, err := r.commit(ctx, ""); err != nil {
 			return false, conflicts, err
 		}
 		return true, conflicts, nil
@@ -274,22 +289,7 @@ func (r *Repo) run(ctx context.Context, args ...string) (string, error) {
 // lock serializes git operations across every memory-go process sharing the
 // repository (e.g. several agent sessions on one machine).
 func (r *Repo) lock() (func(), error) {
-	p := filepath.Join(r.Dir, ".memory-go", "git.lock")
-	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-		return nil, err
-	}
-	f, err := os.OpenFile(p, os.O_CREATE|os.O_RDWR, 0o644)
-	if err != nil {
-		return nil, err
-	}
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
-		f.Close()
-		return nil, err
-	}
-	return func() {
-		syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
-		f.Close()
-	}, nil
+	return lockfile.Lock(filepath.Join(r.Dir, ".memory-go", "git.lock"))
 }
 
 type gitError struct {

@@ -32,6 +32,7 @@ type writeArgs struct {
 	Directory string   `json:"directory,omitempty" jsonschema:"folder for the note, e.g. the project name or 'general'"`
 	Content   string   `json:"content" jsonschema:"Markdown body. Write facts as '- [category] fact #tag' and link notes with [[Title]]"`
 	Tags      []string `json:"tags,omitempty" jsonschema:"tags for the note; kept from the existing note when omitted"`
+	Overwrite bool     `json:"overwrite,omitempty" jsonschema:"replace the content of an existing note with the same title and directory (default false)"`
 }
 
 type editArgs struct {
@@ -87,10 +88,10 @@ func New(app *memory.App, version string) *mcp.Server {
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "write_note",
-		Description: "Create a memory note, or replace the body of the note with the same title in the same directory. " +
-			"To add to an existing note without rewriting it, use edit_note.",
+		Description: "Create a memory note. Fails if a note with the same title already exists in that directory, " +
+			"unless overwrite is true; to add to an existing note, use edit_note instead.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in writeArgs) (*mcp.CallToolResult, any, error) {
-		rel, created, err := app.Write(ctx, in.Title, in.Directory, in.Content, in.Tags)
+		rel, created, err := app.Write(ctx, in.Title, in.Directory, in.Content, in.Tags, in.Overwrite)
 		if err != nil {
 			return nil, nil, err
 		}

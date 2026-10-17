@@ -17,6 +17,8 @@ import (
 	"strings"
 	"time"
 	"unicode"
+
+	"golang.org/x/text/unicode/norm"
 )
 
 type Note struct {
@@ -138,20 +140,36 @@ func appendTag(tags []string, t string) []string {
 	return append(tags, t)
 }
 
+// letterFolds covers Latin letters that don't decompose into a base letter
+// plus accents, so stripping accents alone would keep them.
+var letterFolds = map[rune]string{
+	'đ': "d", 'ð': "d", 'ł': "l", 'ø': "o", 'ı': "i",
+	'ß': "ss", 'æ': "ae", 'œ': "oe", 'þ': "th",
+}
+
 // Slugify turns a title into a file-name-safe, lowercase, hyphenated slug.
+// Accents are removed ("Tiếng Việt" → "tieng-viet") because macOS and Linux
+// can encode accented file names differently, which would split one note into
+// two across machines. Non-Latin scripts are kept, in NFC form.
 func Slugify(s string) string {
 	var b strings.Builder
 	dash := false
-	for _, r := range strings.ToLower(s) {
-		if unicode.IsLetter(r) || unicode.IsNumber(r) {
+	for _, r := range norm.NFD.String(strings.ToLower(s)) {
+		switch {
+		case unicode.Is(unicode.Mn, r):
+			continue
+		case letterFolds[r] != "":
+			b.WriteString(letterFolds[r])
+			dash = false
+		case unicode.IsLetter(r) || unicode.IsNumber(r):
 			b.WriteRune(r)
 			dash = false
-		} else if !dash && b.Len() > 0 {
+		case !dash && b.Len() > 0:
 			b.WriteByte('-')
 			dash = true
 		}
 	}
-	slug := strings.TrimRight(b.String(), "-")
+	slug := norm.NFC.String(strings.TrimRight(b.String(), "-"))
 	if r := []rune(slug); len(r) > 80 {
 		slug = strings.TrimRight(string(r[:80]), "-")
 	}
@@ -300,7 +318,9 @@ func (s Store) Walk(fn func(rel string, mod time.Time) error) error {
 		if err != nil {
 			return err
 		}
-		return fn(filepath.ToSlash(rel), info.ModTime())
+		// macOS may hand back decomposed (NFD) names; index everything as NFC
+		// so paths match across machines.
+		return fn(norm.NFC.String(filepath.ToSlash(rel)), info.ModTime())
 	})
 }
 

@@ -16,12 +16,14 @@ import (
 
 	"github.com/dunkbing/memory-go/internal/gitsync"
 	"github.com/dunkbing/memory-go/internal/index"
+	"github.com/dunkbing/memory-go/internal/lockfile"
 	"github.com/dunkbing/memory-go/internal/notes"
 	"github.com/dunkbing/memory-go/internal/secrets"
+	"golang.org/x/text/unicode/norm"
 )
 
 // pushDelay batches a burst of writes into a single push.
-const pushDelay = 5 * time.Second
+var pushDelay = 5 * time.Second
 
 type App struct {
 	Store notes.Store
@@ -34,6 +36,9 @@ type App struct {
 	mu          sync.Mutex
 	pushTimer   *time.Timer
 	pushPending bool
+
+	autoStop chan struct{} // closed to stop background sync
+	autoDone chan struct{} // closed when background sync has stopped
 }
 
 func Open(dir string, logger *log.Logger) (*App, error) {
@@ -59,8 +64,44 @@ func Open(dir string, logger *log.Logger) (*App, error) {
 	return a, nil
 }
 
-// Close pushes anything still pending and closes the index.
+// StartAutoSync syncs once in the background right away, then every
+// interval (never again when interval is 0), so the server can answer
+// requests while the network is slow and long sessions see other machines'
+// notes.
+func (a *App) StartAutoSync(interval time.Duration) {
+	a.autoStop, a.autoDone = make(chan struct{}), make(chan struct{})
+	go func() {
+		defer close(a.autoDone)
+		for {
+			// Not tied to autoStop: killing git mid-merge would leave the
+			// repository half-merged, so an in-flight sync always finishes.
+			ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+			res, err := a.Sync(ctx)
+			cancel()
+			if err != nil {
+				a.Log.Printf("background sync failed, will retry: %v", err)
+			} else if len(res.Conflicts) > 0 {
+				a.Log.Print(res)
+			}
+			if interval <= 0 {
+				return
+			}
+			select {
+			case <-a.autoStop:
+				return
+			case <-time.After(interval):
+			}
+		}
+	}()
+}
+
+// Close stops background sync, pushes anything still pending and closes the
+// index.
 func (a *App) Close() {
+	if a.autoStop != nil {
+		close(a.autoStop)
+		<-a.autoDone
+	}
 	a.mu.Lock()
 	if a.pushTimer != nil {
 		a.pushTimer.Stop()
@@ -72,7 +113,7 @@ func (a *App) Close() {
 
 // Resolve finds a note by path, permalink or title.
 func (a *App) Resolve(id string) (string, error) {
-	id = strings.TrimPrefix(strings.TrimSpace(id), "memory://")
+	id = norm.NFC.String(strings.TrimPrefix(strings.TrimSpace(id), "memory://"))
 	if id == "" {
 		return "", errors.New("empty note identifier")
 	}
@@ -101,10 +142,16 @@ func (a *App) Resolve(id string) (string, error) {
 	}
 }
 
-// Write creates the note, or replaces the body of an existing note with the
-// same title in the same directory. It reports whether the note is new.
-func (a *App) Write(ctx context.Context, title, dir, content string, tags []string) (string, bool, error) {
-	title = strings.TrimSpace(title)
+// Write creates a note. An existing note with the same title in the same
+// directory is replaced only when overwrite is set. It reports whether the
+// note is new.
+func (a *App) Write(ctx context.Context, title, dir, content string, tags []string, overwrite bool) (string, bool, error) {
+	unlock, err := a.writeLock()
+	if err != nil {
+		return "", false, err
+	}
+	defer unlock()
+	title = norm.NFC.String(strings.TrimSpace(title))
 	if title == "" {
 		return "", false, errors.New("title is required")
 	}
@@ -129,6 +176,10 @@ func (a *App) Write(ctx context.Context, title, dir, content string, tags []stri
 	}
 	verb := "add"
 	if !created {
+		if !overwrite {
+			return "", false, fmt.Errorf("note %s already exists (titled %q); add to it with edit_note, "+
+				"or call write_note with overwrite=true to replace its content", n.Path, old.Title)
+		}
 		verb = "update"
 		n.Created, n.Extra = old.Created, old.Extra
 		if len(n.Tags) == 0 {
@@ -140,6 +191,11 @@ func (a *App) Write(ctx context.Context, title, dir, content string, tags []stri
 
 // Edit appends to, prepends to, or find-and-replaces within a note's body.
 func (a *App) Edit(ctx context.Context, id, op, content, find string, expected int) (string, error) {
+	unlock, err := a.writeLock()
+	if err != nil {
+		return "", err
+	}
+	defer unlock()
 	rel, err := a.Resolve(id)
 	if err != nil {
 		return "", err
@@ -175,6 +231,11 @@ func (a *App) Edit(ctx context.Context, id, op, content, find string, expected i
 }
 
 func (a *App) Delete(ctx context.Context, id string) (string, error) {
+	unlock, err := a.writeLock()
+	if err != nil {
+		return "", err
+	}
+	defer unlock()
 	rel, err := a.Resolve(id)
 	if err != nil {
 		return "", err
@@ -195,6 +256,13 @@ func (a *App) Delete(ctx context.Context, id string) (string, error) {
 // Sync commits edits made outside memory-go (e.g. in Obsidian), pulls,
 // pushes, and reindexes whatever changed.
 func (a *App) Sync(ctx context.Context) (gitsync.Result, error) {
+	// A pull rewrites notes, so it must not interleave with an edit's
+	// read-modify-write.
+	unlock, err := a.writeLock()
+	if err != nil {
+		return gitsync.Result{}, err
+	}
+	defer unlock()
 	a.mu.Lock()
 	if a.pushTimer != nil {
 		a.pushTimer.Stop()
@@ -207,6 +275,13 @@ func (a *App) Sync(ctx context.Context) (gitsync.Result, error) {
 		err = ierr
 	}
 	return res, err
+}
+
+// writeLock serializes every read-modify-write of notes, across goroutines
+// and across memory-go processes sharing the repository, so concurrent edits
+// can't overwrite each other.
+func (a *App) writeLock() (func(), error) {
+	return lockfile.Lock(filepath.Join(a.Store.Root, ".memory-go", "write.lock"))
 }
 
 func (a *App) save(ctx context.Context, n notes.Note, verb string) error {
