@@ -1,0 +1,324 @@
+// Package notes reads and writes Markdown notes with a small YAML frontmatter.
+//
+// The format stays compatible with Basic Memory and Obsidian: a frontmatter
+// block (title, tags, created, plus any unknown keys kept verbatim) followed by
+// a free-form Markdown body. Notes carry no "updated" timestamp on purpose, so
+// git's union merge of concurrent appends never produces duplicate keys.
+package notes
+
+import (
+	"errors"
+	"fmt"
+	"io/fs"
+	"os"
+	"path"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"time"
+	"unicode"
+)
+
+type Note struct {
+	Path    string // slash-separated, relative to the store root, ends in .md
+	Title   string
+	Tags    []string
+	Created time.Time
+	Extra   []string // unknown frontmatter lines, preserved as-is
+	Body    string
+}
+
+// Permalink is the note's path without the .md extension.
+func Permalink(p string) string { return strings.TrimSuffix(p, ".md") }
+
+func Parse(p string, data []byte) Note {
+	n := Note{Path: p, Title: strings.TrimSuffix(path.Base(p), ".md")}
+	text := strings.ReplaceAll(string(data), "\r\n", "\n")
+	if !strings.HasPrefix(text, "---\n") {
+		n.Body = text
+		return n
+	}
+	rest := text[len("---\n"):]
+	var fm string
+	if end := strings.Index(rest, "\n---\n"); end >= 0 {
+		fm, n.Body = rest[:end], rest[end+len("\n---\n"):]
+	} else if strings.HasSuffix(rest, "\n---") {
+		fm = strings.TrimSuffix(rest, "\n---")
+	} else {
+		n.Body = text
+		return n
+	}
+	n.Body = strings.TrimLeft(n.Body, "\n")
+
+	key := ""
+	for _, line := range strings.Split(fm, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if key != "" && (strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t") || strings.HasPrefix(trimmed, "- ")) {
+			if key == "tags" {
+				n.Tags = appendTag(n.Tags, strings.TrimPrefix(trimmed, "- "))
+			} else {
+				n.Extra = append(n.Extra, line)
+			}
+			continue
+		}
+		k, v, ok := strings.Cut(line, ":")
+		if !ok {
+			n.Extra = append(n.Extra, line)
+			key = ""
+			continue
+		}
+		key = strings.TrimSpace(k)
+		v = strings.TrimSpace(v)
+		switch key {
+		case "title":
+			if v != "" {
+				n.Title = unquote(v)
+			}
+		case "tags":
+			n.Tags = nil
+			for _, t := range strings.Split(strings.Trim(v, "[]"), ",") {
+				n.Tags = appendTag(n.Tags, t)
+			}
+		case "created":
+			if t, err := time.Parse(time.RFC3339, unquote(v)); err == nil {
+				n.Created = t
+			}
+		default:
+			n.Extra = append(n.Extra, line)
+		}
+	}
+	return n
+}
+
+func (n Note) Format() []byte {
+	var b strings.Builder
+	b.WriteString("---\n")
+	fmt.Fprintf(&b, "title: %s\n", yamlString(n.Title))
+	if len(n.Tags) > 0 {
+		quoted := make([]string, len(n.Tags))
+		for i, t := range n.Tags {
+			quoted[i] = yamlString(t)
+		}
+		fmt.Fprintf(&b, "tags: [%s]\n", strings.Join(quoted, ", "))
+	}
+	if !n.Created.IsZero() {
+		fmt.Fprintf(&b, "created: %s\n", n.Created.UTC().Format(time.RFC3339))
+	}
+	for _, line := range n.Extra {
+		b.WriteString(line + "\n")
+	}
+	b.WriteString("---\n\n")
+	body := strings.TrimLeft(n.Body, "\n")
+	b.WriteString(body)
+	if !strings.HasSuffix(body, "\n") {
+		b.WriteString("\n")
+	}
+	return []byte(b.String())
+}
+
+// NormalizeTags trims, strips a leading '#', lowercases and dedupes tags.
+func NormalizeTags(tags []string) []string {
+	var out []string
+	for _, t := range tags {
+		out = appendTag(out, t)
+	}
+	return out
+}
+
+func appendTag(tags []string, t string) []string {
+	t = strings.ToLower(strings.TrimPrefix(unquote(strings.TrimSpace(t)), "#"))
+	if t == "" {
+		return tags
+	}
+	for _, existing := range tags {
+		if existing == t {
+			return tags
+		}
+	}
+	return append(tags, t)
+}
+
+// Slugify turns a title into a file-name-safe, lowercase, hyphenated slug.
+func Slugify(s string) string {
+	var b strings.Builder
+	dash := false
+	for _, r := range strings.ToLower(s) {
+		if unicode.IsLetter(r) || unicode.IsNumber(r) {
+			b.WriteRune(r)
+			dash = false
+		} else if !dash && b.Len() > 0 {
+			b.WriteByte('-')
+			dash = true
+		}
+	}
+	slug := strings.TrimRight(b.String(), "-")
+	if r := []rune(slug); len(r) > 80 {
+		slug = strings.TrimRight(string(r[:80]), "-")
+	}
+	if slug == "" {
+		return "note"
+	}
+	return slug
+}
+
+// CleanDir normalizes a user-supplied directory into slugified, slash-separated
+// segments. It returns "" for the root.
+func CleanDir(dir string) (string, error) {
+	dir = strings.Trim(strings.ReplaceAll(strings.TrimSpace(dir), "\\", "/"), "/")
+	if dir == "" {
+		return "", nil
+	}
+	var segs []string
+	for _, seg := range strings.Split(dir, "/") {
+		if seg == ".." {
+			return "", fmt.Errorf("invalid directory %q", dir)
+		}
+		if seg == "" || seg == "." {
+			continue
+		}
+		segs = append(segs, Slugify(seg))
+	}
+	return strings.Join(segs, "/"), nil
+}
+
+type Store struct{ Root string }
+
+var ErrNotFound = errors.New("note not found")
+
+// abs maps a relative note path to an absolute one, refusing anything that
+// escapes the root or touches hidden directories such as .git.
+func (s Store) abs(rel string) (string, error) {
+	clean := path.Clean(filepath.ToSlash(rel))
+	if clean == "." || path.IsAbs(clean) || !strings.HasSuffix(clean, ".md") {
+		return "", fmt.Errorf("invalid note path %q", rel)
+	}
+	for _, seg := range strings.Split(clean, "/") {
+		if seg == ".." || strings.HasPrefix(seg, ".") {
+			return "", fmt.Errorf("invalid note path %q", rel)
+		}
+	}
+	return filepath.Join(s.Root, filepath.FromSlash(clean)), nil
+}
+
+func (s Store) Exists(rel string) bool {
+	p, err := s.abs(rel)
+	if err != nil {
+		return false
+	}
+	info, err := os.Stat(p)
+	return err == nil && info.Mode().IsRegular()
+}
+
+func (s Store) Read(rel string) (Note, time.Time, error) {
+	p, err := s.abs(rel)
+	if err != nil {
+		return Note{}, time.Time{}, err
+	}
+	data, err := os.ReadFile(p)
+	if errors.Is(err, fs.ErrNotExist) {
+		return Note{}, time.Time{}, ErrNotFound
+	} else if err != nil {
+		return Note{}, time.Time{}, err
+	}
+	info, err := os.Stat(p)
+	if err != nil {
+		return Note{}, time.Time{}, err
+	}
+	return Parse(path.Clean(filepath.ToSlash(rel)), data), info.ModTime(), nil
+}
+
+// Write stores the note atomically and returns its new modification time.
+func (s Store) Write(n Note) (time.Time, error) {
+	p, err := s.abs(n.Path)
+	if err != nil {
+		return time.Time{}, err
+	}
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		return time.Time{}, err
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(p), ".tmp-*")
+	if err != nil {
+		return time.Time{}, err
+	}
+	defer os.Remove(tmp.Name())
+	if _, err := tmp.Write(n.Format()); err != nil {
+		tmp.Close()
+		return time.Time{}, err
+	}
+	if err := tmp.Close(); err != nil {
+		return time.Time{}, err
+	}
+	if err := os.Rename(tmp.Name(), p); err != nil {
+		return time.Time{}, err
+	}
+	info, err := os.Stat(p)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return info.ModTime(), nil
+}
+
+func (s Store) Delete(rel string) error {
+	p, err := s.abs(rel)
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(p); errors.Is(err, fs.ErrNotExist) {
+		return ErrNotFound
+	} else if err != nil {
+		return err
+	}
+	// Drop directories the delete left empty, but never the root itself.
+	for dir := filepath.Dir(p); dir != filepath.Clean(s.Root); dir = filepath.Dir(dir) {
+		if os.Remove(dir) != nil {
+			break
+		}
+	}
+	return nil
+}
+
+// Walk calls fn for every .md file, skipping hidden files and directories.
+func (s Store) Walk(fn func(rel string, mod time.Time) error) error {
+	return filepath.WalkDir(s.Root, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if p != s.Root && strings.HasPrefix(d.Name(), ".") {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if d.IsDir() || !strings.HasSuffix(d.Name(), ".md") {
+			return nil
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(s.Root, p)
+		if err != nil {
+			return err
+		}
+		return fn(filepath.ToSlash(rel), info.ModTime())
+	})
+}
+
+func yamlString(s string) string {
+	if s == "" || strings.ContainsAny(s, ":#[]{},&*!|>'\"%@`") || strings.TrimSpace(s) != s {
+		return strconv.Quote(s)
+	}
+	return s
+}
+
+func unquote(s string) string {
+	if len(s) >= 2 && s[0] == '"' && s[len(s)-1] == '"' {
+		if u, err := strconv.Unquote(s); err == nil {
+			return u
+		}
+	}
+	if len(s) >= 2 && s[0] == '\'' && s[len(s)-1] == '\'' {
+		return strings.ReplaceAll(s[1:len(s)-1], "''", "'")
+	}
+	return s
+}
