@@ -16,8 +16,9 @@ import (
 )
 
 // githubClientID is the public client ID of the memory-go GitHub OAuth App,
-// set at build time with -ldflags "-X main.githubClientID=...".
-var githubClientID = ""
+// public by design (device flow needs no secret); override with
+// MEMORY_GO_GITHUB_CLIENT_ID.
+var githubClientID = "Ov23liPvy5PXJaaqYI4N"
 
 func clientID() string {
 	if id := os.Getenv("MEMORY_GO_GITHUB_CLIENT_ID"); id != "" {
