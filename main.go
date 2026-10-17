@@ -18,6 +18,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/dunkbing/memory-go/internal/github"
 	"github.com/dunkbing/memory-go/internal/gitsync"
 	"github.com/dunkbing/memory-go/internal/hooks"
 	"github.com/dunkbing/memory-go/internal/index"
@@ -35,6 +36,12 @@ Usage:
   memory-go [--dir DIR] [--sync-interval 3m] [command] [args]
 
 Commands:
+  setup              log in to GitHub if needed, then connect the notes
+                     directory to your notes repo, creating it if missing
+                       --repo NAME     NAME or OWNER/NAME (default memory-notes)
+                       --public        create it public (default private)
+  auth login|status|logout
+                     manage the GitHub login (opens your browser)
   serve              run the MCP server on stdio (default)
   context            print memory for the current project, for a SessionStart
                      hook (reads the hook's JSON from stdin when piped)
@@ -78,6 +85,15 @@ func main() {
 		sessionContext(*dir, args)
 	case "nudge":
 		nudge(*dir, args)
+	case "auth":
+		err = authCmd(ctx, args)
+	case "setup":
+		err = setupCmd(ctx, *dir, args)
+	case "credential":
+		// git credential helper protocol; see credentialHelperConfig.
+		if len(args) > 0 {
+			err = github.CredentialHelper(args[0], os.Stdin, os.Stdout)
+		}
 	case "init":
 		err = initRepo(ctx, *dir, args)
 	case "sync":

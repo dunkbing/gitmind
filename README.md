@@ -20,16 +20,25 @@ Claude Code / Codex ──stdio──▶ memory-go
 
 ## Install
 
-Grab the binary for your machine from `dist/` (or `go build -o memory-go .`) and
-put it on your `PATH`, e.g. `~/.local/bin/memory-go`. On macOS, clear the
-download quarantine flag if needed: `xattr -d com.apple.quarantine memory-go`.
-
-Point it at the notes repository once per machine (git must be able to push to
-it, e.g. after `gh auth login && gh auth setup-git`, or with an SSH URL):
-
 ```bash
-memory-go init https://github.com/<you>/memory-notes.git
+go install github.com/dunkbing/memory-go@latest
+memory-go setup
 ```
+
+`setup` logs you in to GitHub (it copies a one-time code and opens
+github.com/login/device in your browser; over SSH it prints the link to open on
+any device), then connects `~/.memory-go` to your `memory-notes` repository,
+creating it as a private repository if it doesn't exist yet. Run the same
+command on every machine. `--repo NAME` or `--repo OWNER/NAME` picks another
+repository.
+
+memory-go handles git authentication for the notes repository itself (it's
+registered as git's credential helper for that repository only), so pushes
+work without `gh` or SSH keys. `memory-go auth status|logout` manages the login,
+saved in your user config directory, readable only by you.
+
+Prefer your own git setup? `memory-go init <git-url>` clones any remote and
+uses your existing git credentials instead.
 
 ### Claude Code
 
@@ -111,7 +120,7 @@ as AGENT_MEMORY.md tells them to.
 ## CLI
 
 ```
-memory-go [--dir DIR] [--sync-interval 3m] [serve|context|init [REMOTE]|sync|reindex|search QUERY|recent [N]|version]
+memory-go [--dir DIR] [--sync-interval 3m] [setup|auth|serve|context|nudge|init [REMOTE]|sync|reindex|search QUERY|recent [N]|version]
 ```
 
 The notes directory defaults to `$MEMORY_GO_DIR`, then `~/.memory-go`.
@@ -129,3 +138,9 @@ line like `- depends on [[Auth service]]` records "depends on" as the relation.
 - "Updated" times come from git: the last commit touching a note, or the file
   time while it has uncommitted edits.
 - macOS and Linux only (uses `flock`).
+
+## Development
+
+The GitHub login uses the device flow of a GitHub OAuth App (device flow
+enabled, no client secret needed). Its client ID is public and set in
+`auth.go`; forks can override it with `MEMORY_GO_GITHUB_CLIENT_ID`.

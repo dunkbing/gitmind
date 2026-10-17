@@ -68,12 +68,18 @@ func IsRepo(dir string) bool {
 
 // Init makes dir a notes repository: it clones remote into an empty dir,
 // otherwise runs git init (adding remote as origin when given), then makes
-// sure the ignore and merge rules are committed.
-func Init(ctx context.Context, dir, remote string) error {
+// sure the ignore and merge rules are committed. config holds "key=value"
+// git settings, used for the clone and stored in the repository's own config
+// (e.g. a credential helper).
+func Init(ctx context.Context, dir, remote string, config ...string) error {
 	r := &Repo{Dir: dir}
 	if !IsRepo(dir) {
 		if remote != "" && isEmptyDir(dir) {
-			cmd := exec.CommandContext(ctx, "git", "clone", "-q", remote, dir)
+			var args []string
+			for _, kv := range config {
+				args = append(args, "-c", kv)
+			}
+			cmd := exec.CommandContext(ctx, "git", append(args, "clone", "-q", remote, dir)...)
 			cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
 			if out, err := cmd.CombinedOutput(); err != nil {
 				return fmt.Errorf("git clone: %v: %s", err, strings.TrimSpace(string(out)))
@@ -86,6 +92,9 @@ func Init(ctx context.Context, dir, remote string) error {
 				return err
 			}
 		}
+	}
+	if err := Configure(ctx, dir, config...); err != nil {
+		return err
 	}
 	if remote != "" && !r.hasRemote(ctx) {
 		if _, err := r.run(ctx, "remote", "add", "origin", remote); err != nil {
@@ -106,6 +115,49 @@ func Init(ctx context.Context, dir, remote string) error {
 		return err
 	}
 	return nil
+}
+
+// Configure stores "key=value" settings in the repository's own git config,
+// replacing earlier values of the same keys. Repeating a key gives it several
+// values, in order.
+func Configure(ctx context.Context, dir string, config ...string) error {
+	r := &Repo{Dir: dir}
+	reset := map[string]bool{}
+	for _, kv := range config {
+		key, value, ok := strings.Cut(kv, "=")
+		if !ok {
+			return fmt.Errorf("invalid git config %q", kv)
+		}
+		if !reset[key] {
+			reset[key] = true
+			if _, err := r.run(ctx, "config", "--local", "--unset-all", key); err != nil && !isExitCode(err, 5) {
+				return err
+			}
+		}
+		if _, err := r.run(ctx, "config", "--local", "--add", key, value); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Remote returns origin's URL, or "" when there is none.
+func (r *Repo) Remote(ctx context.Context) string {
+	out, err := r.run(ctx, "remote", "get-url", "origin")
+	if err != nil {
+		return ""
+	}
+	return out
+}
+
+// SetRemote points origin at url, adding it if needed.
+func (r *Repo) SetRemote(ctx context.Context, url string) error {
+	if r.hasRemote(ctx) {
+		_, err := r.run(ctx, "remote", "set-url", "origin", url)
+		return err
+	}
+	_, err := r.run(ctx, "remote", "add", "origin", url)
+	return err
 }
 
 // Commit stages paths (everything when none are given) and commits them,
@@ -200,7 +252,9 @@ func (r *Repo) pull(ctx context.Context) (bool, []string, error) {
 		return false, nil, nil // remote branch doesn't exist yet; the push creates it
 	}
 	before := r.head(ctx)
-	args := append(r.identity(ctx), "pull", "-q", "--no-rebase", "--no-edit", "origin", branch)
+	// Unrelated histories happen when a machine started its own notes repo
+	// before connecting to an existing remote; merge them rather than fail.
+	args := append(r.identity(ctx), "pull", "-q", "--no-rebase", "--no-edit", "--allow-unrelated-histories", "origin", branch)
 	if _, err := r.run(ctx, args...); err != nil {
 		conflicts := r.conflicts(ctx)
 		if len(conflicts) == 0 {
