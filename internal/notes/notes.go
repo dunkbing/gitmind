@@ -357,16 +357,8 @@ var linkRe = regexp.MustCompile(`\[\[([^\[\]|#]+)(?:#[^\[\]|]*)?(?:\|[^\[\]]*)?\
 func Links(body string) []Link {
 	var links []Link
 	seen := map[Link]bool{}
-	fenced := false
-	for _, line := range strings.Split(body, "\n") {
+	for _, line := range unfencedLines(body) {
 		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "```") || strings.HasPrefix(trimmed, "~~~") {
-			fenced = !fenced
-			continue
-		}
-		if fenced {
-			continue
-		}
 		matches := linkRe.FindAllStringSubmatchIndex(line, -1)
 		for i, m := range matches {
 			l := Link{Target: strings.TrimSpace(line[m[2]:m[3]])}
@@ -417,4 +409,62 @@ func Summary(body string) string {
 		return line
 	}
 	return ""
+}
+
+// Observation is a categorized fact line, Basic Memory style:
+// "- [decision] use JWT #auth".
+type Observation struct {
+	Category string
+	Text     string
+}
+
+var (
+	observationRe = regexp.MustCompile(`^\s*[-*]\s+\[([^\[\]]+)\]\s+(.+)$`)
+	inlineTagRe   = regexp.MustCompile(`(?:^|[\s(])#(\pL[\pL\pN_/-]*)`)
+)
+
+// Observations returns the categorized lines in body, skipping task-list
+// checkboxes ("- [ ]", "- [x]") and fenced code blocks.
+func Observations(body string) []Observation {
+	var obs []Observation
+	for _, line := range unfencedLines(body) {
+		m := observationRe.FindStringSubmatch(line)
+		if m == nil {
+			continue
+		}
+		category := strings.ToLower(strings.TrimSpace(m[1]))
+		if category == "" || category == "x" {
+			continue
+		}
+		obs = append(obs, Observation{Category: category, Text: strings.TrimSpace(m[2])})
+	}
+	return obs
+}
+
+// InlineTags returns the #tags written in body, normalized like frontmatter
+// tags. Markdown headings ("# Title") and URL fragments don't count.
+func InlineTags(body string) []string {
+	var tags []string
+	for _, line := range unfencedLines(body) {
+		for _, m := range inlineTagRe.FindAllStringSubmatch(line, -1) {
+			tags = appendTag(tags, strings.TrimRight(m[1], "/-"))
+		}
+	}
+	return tags
+}
+
+func unfencedLines(body string) []string {
+	var lines []string
+	fenced := false
+	for _, line := range strings.Split(body, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "```") || strings.HasPrefix(trimmed, "~~~") {
+			fenced = !fenced
+			continue
+		}
+		if !fenced {
+			lines = append(lines, line)
+		}
+	}
+	return lines
 }

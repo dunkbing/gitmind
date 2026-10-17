@@ -73,7 +73,7 @@ fit are listed by title. Agents without hooks (e.g. Codex) can call the
 
 | Tool | What it does |
 |---|---|
-| `search_notes` | Full-text search (SQLite FTS5, BM25; title > tags > body) |
+| `search_notes` | Full-text search (SQLite FTS5, BM25; title > tags > body; notes with every word first, recent notes slightly favoured), filterable by directory, tags (frontmatter or inline `#tags`), observation category (`[decision]`, shown line by line) and update date (`since: 7d`) |
 | `read_note` | Read a note by path, permalink or title, with its backlinks |
 | `build_context` | A note plus the notes it links to and from, and links to notes not written yet (`depth: 2` goes one step further) |
 | `project_context` | A project's notes, general notes and recent activity, for the start of a session |
@@ -112,4 +112,6 @@ line like `- depends on [[Auth service]]` records "depends on" as the relation.
 ## Limitations
 
 - Keyword search only, no embeddings yet.
+- "Updated" times come from git: the last commit touching a note, or the file
+  time while it has uncommitted edits.
 - macOS and Linux only (uses `flock`).

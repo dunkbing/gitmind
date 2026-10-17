@@ -21,20 +21,22 @@ import (
 
 // schemaVersion is bumped whenever the schema changes; an index built with
 // another version is dropped and rebuilt from the notes on disk.
-const schemaVersion = 3
+const schemaVersion = 4
 
 const schema = `
 CREATE TABLE notes (
-	id    INTEGER PRIMARY KEY,
-	path  TEXT NOT NULL UNIQUE,
-	slug  TEXT NOT NULL, -- slugified file name, the main key [[links]] resolve by
-	title TEXT NOT NULL,
+	id         INTEGER PRIMARY KEY,
+	path       TEXT NOT NULL UNIQUE,
+	slug       TEXT NOT NULL, -- slugified file name, the main key [[links]] resolve by
+	title      TEXT NOT NULL,
 	title_slug TEXT NOT NULL, -- slugified title, for notes whose title and file name differ
-	tags  TEXT NOT NULL,
-	mtime INTEGER NOT NULL
+	tags       TEXT NOT NULL, -- frontmatter and inline tags, space separated
+	mtime      INTEGER NOT NULL, -- file modification time, only for change detection
+	updated    INTEGER NOT NULL  -- when the note last really changed, for ordering and display
 );
 CREATE INDEX notes_slug ON notes (slug);
 CREATE INDEX notes_title_slug ON notes (title_slug);
+CREATE INDEX notes_updated ON notes (updated);
 CREATE VIRTUAL TABLE notes_fts USING fts5(title, tags, body, tokenize = 'porter unicode61');
 CREATE TABLE links (
 	source_id   INTEGER NOT NULL,
@@ -45,7 +47,13 @@ CREATE TABLE links (
 );
 CREATE INDEX links_source ON links (source_id);
 CREATE INDEX links_slug ON links (target_slug);
+CREATE TABLE note_tags (note_id INTEGER NOT NULL, tag TEXT NOT NULL);
+CREATE INDEX note_tags_tag ON note_tags (tag, note_id);
+CREATE TABLE observations (note_id INTEGER NOT NULL, category TEXT NOT NULL, text TEXT NOT NULL);
+CREATE INDEX observations_category ON observations (category, note_id);
 `
+
+var tables = []string{"observations", "note_tags", "links", "notes_fts", "notes"}
 
 // resolves is the join condition from a links row l to the note t it names.
 const resolves = `(l.target_path = t.path OR (l.target_path = '' AND (l.target_slug = t.slug OR l.target_slug = t.title_slug)))`
@@ -53,11 +61,12 @@ const resolves = `(l.target_path = t.path OR (l.target_path = '' AND (l.target_s
 type Index struct{ db *sql.DB }
 
 type Hit struct {
-	Path     string
-	Title    string
-	Tags     []string
-	Modified time.Time
-	Snippet  string
+	Path         string
+	Title        string
+	Tags         []string
+	Modified     time.Time
+	Snippet      string
+	Observations []string // lines matching Query.Category, when filtering by category
 }
 
 func Open(file string) (*Index, error) {
@@ -89,7 +98,7 @@ func migrate(db *sql.DB) error {
 		return err
 	}
 	defer tx.Rollback()
-	for _, table := range []string{"links", "notes_fts", "notes"} {
+	for _, table := range tables {
 		if _, err := tx.Exec(`DROP TABLE IF EXISTS ` + table); err != nil {
 			return err
 		}
@@ -105,13 +114,15 @@ func migrate(db *sql.DB) error {
 
 func (ix *Index) Close() error { return ix.db.Close() }
 
-func (ix *Index) Upsert(n notes.Note, mod time.Time) error {
+// Upsert indexes n, whose file has modification time mod and whose content
+// last changed at updated.
+func (ix *Index) Upsert(n notes.Note, mod, updated time.Time) error {
 	tx, err := ix.db.Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
-	if err := upsert(tx, n, mod); err != nil {
+	if err := upsert(tx, n, mod, updated); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -130,8 +141,10 @@ func (ix *Index) Remove(p string) error {
 }
 
 // Sync brings the index in line with the files in st and returns how many
-// notes were added, updated or removed.
-func (ix *Index) Sync(st notes.Store) (int, error) {
+// notes were added, updated or removed. updatedAt reports when a changed
+// file's content last really changed; a file's modification time alone is
+// misleading, since a git pull resets it.
+func (ix *Index) Sync(st notes.Store, updatedAt func(rel string, mod time.Time) time.Time) (int, error) {
 	known := map[string]int64{}
 	rows, err := ix.db.Query(`SELECT path, mtime FROM notes`)
 	if err != nil {
@@ -168,7 +181,7 @@ func (ix *Index) Sync(st notes.Store) (int, error) {
 			return err
 		}
 		changed++
-		return upsert(tx, n, mod)
+		return upsert(tx, n, mod, updatedAt(rel, mod))
 	})
 	if err != nil {
 		return 0, err
@@ -184,16 +197,17 @@ func (ix *Index) Sync(st notes.Store) (int, error) {
 	return changed, tx.Commit()
 }
 
-func upsert(tx *sql.Tx, n notes.Note, mod time.Time) error {
-	tags := strings.Join(n.Tags, " ")
+func upsert(tx *sql.Tx, n notes.Note, mod, updated time.Time) error {
+	allTags := notes.NormalizeTags(append(append([]string{}, n.Tags...), notes.InlineTags(n.Body)...))
+	tags := strings.Join(allTags, " ")
 	slug := notes.Slugify(strings.TrimSuffix(path.Base(n.Path), ".md"))
 	titleSlug := notes.Slugify(n.Title)
 	var id int64
 	err := tx.QueryRow(`SELECT id FROM notes WHERE path = ?`, n.Path).Scan(&id)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
-		res, err := tx.Exec(`INSERT INTO notes (path, slug, title, title_slug, tags, mtime) VALUES (?, ?, ?, ?, ?, ?)`,
-			n.Path, slug, n.Title, titleSlug, tags, mod.UnixNano())
+		res, err := tx.Exec(`INSERT INTO notes (path, slug, title, title_slug, tags, mtime, updated) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+			n.Path, slug, n.Title, titleSlug, tags, mod.UnixNano(), updated.UnixNano())
 		if err != nil {
 			return err
 		}
@@ -203,14 +217,11 @@ func upsert(tx *sql.Tx, n notes.Note, mod time.Time) error {
 	case err != nil:
 		return err
 	default:
-		if _, err := tx.Exec(`UPDATE notes SET title = ?, title_slug = ?, tags = ?, mtime = ? WHERE id = ?`,
-			n.Title, titleSlug, tags, mod.UnixNano(), id); err != nil {
+		if _, err := tx.Exec(`UPDATE notes SET title = ?, title_slug = ?, tags = ?, mtime = ?, updated = ? WHERE id = ?`,
+			n.Title, titleSlug, tags, mod.UnixNano(), updated.UnixNano(), id); err != nil {
 			return err
 		}
-		if _, err := tx.Exec(`DELETE FROM notes_fts WHERE rowid = ?`, id); err != nil {
-			return err
-		}
-		if _, err := tx.Exec(`DELETE FROM links WHERE source_id = ?`, id); err != nil {
+		if err := removeDerived(tx, id); err != nil {
 			return err
 		}
 	}
@@ -225,6 +236,31 @@ func upsert(tx *sql.Tx, n notes.Note, mod time.Time) error {
 			return err
 		}
 	}
+	for _, t := range allTags {
+		if _, err := tx.Exec(`INSERT INTO note_tags (note_id, tag) VALUES (?, ?)`, id, t); err != nil {
+			return err
+		}
+	}
+	for _, o := range notes.Observations(n.Body) {
+		if _, err := tx.Exec(`INSERT INTO observations (note_id, category, text) VALUES (?, ?, ?)`, id, o.Category, o.Text); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// removeDerived deletes everything indexed from a note's content.
+func removeDerived(tx *sql.Tx, id int64) error {
+	for _, q := range []string{
+		`DELETE FROM notes_fts WHERE rowid = ?`,
+		`DELETE FROM links WHERE source_id = ?`,
+		`DELETE FROM note_tags WHERE note_id = ?`,
+		`DELETE FROM observations WHERE note_id = ?`,
+	} {
+		if _, err := tx.Exec(q, id); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -236,52 +272,147 @@ func remove(tx *sql.Tx, p string) error {
 	} else if err != nil {
 		return err
 	}
-	for _, q := range []string{
-		`DELETE FROM notes_fts WHERE rowid = ?`,
-		`DELETE FROM links WHERE source_id = ?`,
-		`DELETE FROM notes WHERE id = ?`,
-	} {
-		if _, err := tx.Exec(q, id); err != nil {
-			return err
-		}
+	if err := removeDerived(tx, id); err != nil {
+		return err
 	}
-	return nil
+	_, err = tx.Exec(`DELETE FROM notes WHERE id = ?`, id)
+	return err
 }
 
-// Search ranks notes by BM25, weighting title over tags over body. Every word
-// in query is matched as a prefix and any word may match.
-func (ix *Index) Search(query, dir string, limit int) ([]Hit, error) {
-	match := ftsQuery(query)
-	if match == "" {
-		return nil, nil
+// Query describes a search. Text and every filter are optional; filters
+// combine with AND.
+type Query struct {
+	Text     string
+	Dir      string    // only notes under this directory
+	Tags     []string  // only notes with all of these tags
+	Category string    // only notes with observations in this category
+	Since    time.Time // only notes updated at or after this time
+	Before   time.Time // only notes last updated before this time
+	Limit    int
+}
+
+// recencyBoost scales BM25 scores (negative; lower is better) by up to 1.3x
+// for notes updated just now, fading to ~1.02x after a year.
+const recencyBoost = `(1.0 + 0.3 / (1.0 + (? - n.updated) / 2592000000000000.0))` // 30 days in ns
+
+// Search returns notes matching q. With text, notes containing every word
+// rank first (BM25, title over tags over body, nudged towards recent notes),
+// followed by notes containing only some words. Without text, matching notes
+// come newest first.
+func (ix *Index) Search(q Query) ([]Hit, error) {
+	if q.Limit <= 0 {
+		q.Limit = 10
 	}
-	rows, err := ix.db.Query(`
-		SELECT n.path, n.title, n.tags, n.mtime, snippet(notes_fts, 2, '**', '**', '…', 16)
-		FROM notes_fts JOIN notes n ON n.id = notes_fts.rowid
-		WHERE notes_fts MATCH ? AND (? = '' OR n.path LIKE ? || '/%')
-		ORDER BY bm25(notes_fts, 10.0, 5.0, 1.0)
-		LIMIT ?`, match, dir, dir, limit)
+	filter, args := filterSQL(q)
+	var hits []Hit
+	var err error
+	terms := ftsTerms(q.Text)
+	switch {
+	case len(terms) == 0:
+		hits, err = ix.query(`
+			SELECT n.path, n.title, n.tags, n.updated, ''
+			FROM notes n WHERE 1 = 1`+filter+`
+			ORDER BY n.updated DESC LIMIT ?`, append(args, q.Limit)...)
+	default:
+		hits, err = ix.ftsSearch(strings.Join(terms, " "), filter, args, q.Limit)
+		if err == nil && len(terms) > 1 && len(hits) < q.Limit {
+			var more []Hit
+			more, err = ix.ftsSearch(strings.Join(terms, " OR "), filter, args, q.Limit)
+			hits = appendNew(hits, more, q.Limit)
+		}
+	}
 	if err != nil {
 		return nil, err
 	}
-	return scanHits(rows, true)
+	if q.Category != "" {
+		for i := range hits {
+			if hits[i].Observations, err = ix.observations(hits[i].Path, q.Category); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return hits, nil
+}
+
+func (ix *Index) ftsSearch(match, filter string, filterArgs []any, limit int) ([]Hit, error) {
+	args := append([]any{match}, filterArgs...)
+	args = append(args, time.Now().UnixNano(), limit)
+	return ix.query(`
+		SELECT n.path, n.title, n.tags, n.updated, snippet(notes_fts, 2, '**', '**', '…', 16)
+		FROM notes_fts JOIN notes n ON n.id = notes_fts.rowid
+		WHERE notes_fts MATCH ?`+filter+`
+		ORDER BY bm25(notes_fts, 10.0, 5.0, 1.0) * `+recencyBoost+`
+		LIMIT ?`, args...)
+}
+
+func filterSQL(q Query) (string, []any) {
+	var sb strings.Builder
+	var args []any
+	if q.Dir != "" {
+		sb.WriteString(` AND n.path LIKE ? || '/%'`)
+		args = append(args, q.Dir)
+	}
+	for _, t := range notes.NormalizeTags(q.Tags) {
+		sb.WriteString(` AND EXISTS (SELECT 1 FROM note_tags nt WHERE nt.note_id = n.id AND nt.tag = ?)`)
+		args = append(args, t)
+	}
+	if c := strings.ToLower(strings.TrimSpace(q.Category)); c != "" {
+		sb.WriteString(` AND EXISTS (SELECT 1 FROM observations o WHERE o.note_id = n.id AND o.category = ?)`)
+		args = append(args, c)
+	}
+	if !q.Since.IsZero() {
+		sb.WriteString(` AND n.updated >= ?`)
+		args = append(args, q.Since.UnixNano())
+	}
+	if !q.Before.IsZero() {
+		sb.WriteString(` AND n.updated < ?`)
+		args = append(args, q.Before.UnixNano())
+	}
+	return sb.String(), args
+}
+
+func (ix *Index) observations(p, category string) ([]string, error) {
+	rows, err := ix.db.Query(`
+		SELECT o.text FROM observations o JOIN notes n ON n.id = o.note_id
+		WHERE n.path = ? AND o.category = ? ORDER BY o.rowid`, p, strings.ToLower(strings.TrimSpace(category)))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var s string
+		if err := rows.Scan(&s); err != nil {
+			return nil, err
+		}
+		out = append(out, s)
+	}
+	return out, rows.Err()
+}
+
+func appendNew(hits, more []Hit, limit int) []Hit {
+	seen := map[string]bool{}
+	for _, h := range hits {
+		seen[h.Path] = true
+	}
+	for _, h := range more {
+		if len(hits) >= limit {
+			break
+		}
+		if !seen[h.Path] {
+			hits = append(hits, h)
+		}
+	}
+	return hits
 }
 
 func (ix *Index) Recent(limit int) ([]Hit, error) {
-	rows, err := ix.db.Query(`SELECT path, title, tags, mtime FROM notes ORDER BY mtime DESC LIMIT ?`, limit)
-	if err != nil {
-		return nil, err
-	}
-	return scanHits(rows, false)
+	return ix.query(`SELECT path, title, tags, updated, '' FROM notes ORDER BY updated DESC LIMIT ?`, limit)
 }
 
 func (ix *Index) List(dir string) ([]Hit, error) {
-	rows, err := ix.db.Query(`SELECT path, title, tags, mtime FROM notes
+	return ix.query(`SELECT path, title, tags, updated, '' FROM notes
 		WHERE ? = '' OR path LIKE ? || '/%' ORDER BY path`, dir, dir)
-	if err != nil {
-		return nil, err
-	}
-	return scanHits(rows, false)
 }
 
 // LinkHit is a note on the other end of a link.
@@ -294,7 +425,7 @@ type LinkHit struct {
 // match any note yet.
 func (ix *Index) Outgoing(p string) ([]LinkHit, []string, error) {
 	rows, err := ix.db.Query(`
-		SELECT l.target, l.relation, t.path, t.title, t.tags, t.mtime
+		SELECT l.target, l.relation, t.path, t.title, t.tags, t.updated
 		FROM links l JOIN notes s ON s.id = l.source_id
 		LEFT JOIN notes t ON `+resolves+` AND t.id != s.id
 		WHERE s.path = ?
@@ -308,8 +439,8 @@ func (ix *Index) Outgoing(p string) ([]LinkHit, []string, error) {
 	for rows.Next() {
 		var target, relation string
 		var tPath, tTitle, tTags sql.NullString
-		var tMtime sql.NullInt64
-		if err := rows.Scan(&target, &relation, &tPath, &tTitle, &tTags, &tMtime); err != nil {
+		var tUpdated sql.NullInt64
+		if err := rows.Scan(&target, &relation, &tPath, &tTitle, &tTags, &tUpdated); err != nil {
 			return nil, nil, err
 		}
 		if !tPath.Valid {
@@ -318,7 +449,7 @@ func (ix *Index) Outgoing(p string) ([]LinkHit, []string, error) {
 		}
 		hits = append(hits, LinkHit{Hit: Hit{
 			Path: tPath.String, Title: tTitle.String, Tags: strings.Fields(tTags.String),
-			Modified: time.Unix(0, tMtime.Int64),
+			Modified: time.Unix(0, tUpdated.Int64),
 		}, Relation: relation})
 	}
 	return hits, missing, rows.Err()
@@ -327,11 +458,11 @@ func (ix *Index) Outgoing(p string) ([]LinkHit, []string, error) {
 // Backlinks returns the notes that link to p.
 func (ix *Index) Backlinks(p string) ([]LinkHit, error) {
 	rows, err := ix.db.Query(`
-		SELECT DISTINCT s.path, s.title, s.tags, s.mtime, l.relation
+		SELECT DISTINCT s.path, s.title, s.tags, s.updated, l.relation
 		FROM links l JOIN notes s ON s.id = l.source_id
 		JOIN notes t ON `+resolves+`
 		WHERE t.path = ? AND s.id != t.id
-		ORDER BY s.mtime DESC`, p)
+		ORDER BY s.updated DESC`, p)
 	if err != nil {
 		return nil, err
 	}
@@ -340,12 +471,12 @@ func (ix *Index) Backlinks(p string) ([]LinkHit, error) {
 	for rows.Next() {
 		var h LinkHit
 		var tags string
-		var mtime int64
-		if err := rows.Scan(&h.Path, &h.Title, &tags, &mtime, &h.Relation); err != nil {
+		var updated int64
+		if err := rows.Scan(&h.Path, &h.Title, &tags, &updated, &h.Relation); err != nil {
 			return nil, err
 		}
 		h.Tags = strings.Fields(tags)
-		h.Modified = time.Unix(0, mtime)
+		h.Modified = time.Unix(0, updated)
 		hits = append(hits, h)
 	}
 	return hits, rows.Err()
@@ -369,30 +500,31 @@ func (ix *Index) FindByTitle(title string) ([]string, error) {
 	return paths, rows.Err()
 }
 
-func scanHits(rows *sql.Rows, withSnippet bool) ([]Hit, error) {
+// query runs a statement selecting path, title, tags, updated and snippet.
+func (ix *Index) query(q string, args ...any) ([]Hit, error) {
+	rows, err := ix.db.Query(q, args...)
+	if err != nil {
+		return nil, err
+	}
 	defer rows.Close()
 	var hits []Hit
 	for rows.Next() {
 		var h Hit
 		var tags string
-		var mtime int64
-		dest := []any{&h.Path, &h.Title, &tags, &mtime}
-		if withSnippet {
-			dest = append(dest, &h.Snippet)
-		}
-		if err := rows.Scan(dest...); err != nil {
+		var updated int64
+		if err := rows.Scan(&h.Path, &h.Title, &tags, &updated, &h.Snippet); err != nil {
 			return nil, err
 		}
 		h.Tags = strings.Fields(tags)
-		h.Modified = time.Unix(0, mtime)
+		h.Modified = time.Unix(0, updated)
 		hits = append(hits, h)
 	}
 	return hits, rows.Err()
 }
 
-// ftsQuery turns free text into an FTS5 query of quoted prefix terms joined
-// by OR, so user input can never be parsed as FTS syntax.
-func ftsQuery(q string) string {
+// ftsTerms turns free text into quoted FTS5 prefix terms, so user input can
+// never be parsed as FTS syntax.
+func ftsTerms(q string) []string {
 	words := strings.FieldsFunc(q, func(r rune) bool {
 		return !unicode.IsLetter(r) && !unicode.IsNumber(r) && r != '_'
 	})
@@ -400,5 +532,5 @@ func ftsQuery(q string) string {
 	for i, w := range words {
 		terms[i] = `"` + w + `"*`
 	}
-	return strings.Join(terms, " OR ")
+	return terms
 }

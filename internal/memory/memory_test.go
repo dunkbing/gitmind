@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/dunkbing/memory-go/internal/gitsync"
+	"github.com/dunkbing/memory-go/internal/index"
 	"github.com/dunkbing/memory-go/internal/notes"
 )
 
@@ -55,11 +56,11 @@ func TestWriteSearchEditDelete(t *testing.T) {
 	if err != nil || !created || rel != "my-app/deploy-checklist.md" {
 		t.Fatalf("Write = %q, %v, %v", rel, created, err)
 	}
-	hits, err := a.Index.Search("migration", "", 10)
+	hits, err := a.Index.Search(index.Query{Text: "migration"})
 	if err != nil || len(hits) != 1 || hits[0].Path != rel {
 		t.Fatalf("Search = %+v, %v", hits, err)
 	}
-	if hits, _ := a.Index.Search("ops", "other-app", 10); len(hits) != 0 {
+	if hits, _ := a.Index.Search(index.Query{Text: "ops", Dir: "other-app"}); len(hits) != 0 {
 		t.Fatalf("directory filter leaked: %+v", hits)
 	}
 
@@ -117,7 +118,7 @@ func TestSyncBetweenMachines(t *testing.T) {
 	if res := mustSync(t, desktop); !res.Pulled {
 		t.Fatalf("desktop did not pull: %+v", res)
 	}
-	if hits, _ := desktop.Index.Search("pnpm", "", 10); len(hits) != 1 {
+	if hits, _ := desktop.Index.Search(index.Query{Text: "pnpm"}); len(hits) != 1 {
 		t.Fatalf("desktop cannot find the laptop's note: %+v", hits)
 	}
 
@@ -158,7 +159,7 @@ func TestSyncBetweenMachines(t *testing.T) {
 		t.Fatalf("external edit not synced: %+v", res)
 	}
 	mustSync(t, desktop)
-	if hits, _ := desktop.Index.Search("dark", "", 10); len(hits) != 1 {
+	if hits, _ := desktop.Index.Search(index.Query{Text: "dark"}); len(hits) != 1 {
 		t.Fatalf("external edit did not reach desktop: %+v", hits)
 	}
 }

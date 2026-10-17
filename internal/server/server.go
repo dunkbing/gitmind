@@ -4,6 +4,7 @@ package server
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -18,9 +19,13 @@ Search it before starting work on a topic; save decisions, preferences, gotchas 
 Prefer editing an existing note over creating a near-duplicate. Never store secrets.`
 
 type searchArgs struct {
-	Query     string `json:"query" jsonschema:"words to look for in note titles, tags and bodies"`
-	Directory string `json:"directory,omitempty" jsonschema:"only search under this directory, e.g. a project name"`
-	Limit     int    `json:"limit,omitempty" jsonschema:"maximum number of results (default 10)"`
+	Query     string   `json:"query,omitempty" jsonschema:"words to look for in titles, tags and bodies; notes containing all of them rank first. May be omitted when filtering"`
+	Directory string   `json:"directory,omitempty" jsonschema:"only notes under this directory, e.g. a project name"`
+	Tags      []string `json:"tags,omitempty" jsonschema:"only notes with all of these tags (frontmatter tags or inline #tags)"`
+	Category  string   `json:"category,omitempty" jsonschema:"only notes with observations in this category, e.g. decision or gotcha; the matching lines are shown"`
+	Since     string   `json:"since,omitempty" jsonschema:"only notes updated on or after this date (YYYY-MM-DD) or within this period (e.g. 7d, 2w, 3m, 1y)"`
+	Before    string   `json:"before,omitempty" jsonschema:"only notes last updated before this date (YYYY-MM-DD)"`
+	Limit     int      `json:"limit,omitempty" jsonschema:"maximum number of results (default 10)"`
 }
 
 type readArgs struct {
@@ -66,18 +71,19 @@ func New(app *memory.App, version string) *mcp.Server {
 	s := mcp.NewServer(&mcp.Implementation{Name: "memory-go", Version: version}, &mcp.ServerOptions{Instructions: instructions})
 
 	mcp.AddTool(s, &mcp.Tool{
-		Name:        "search_notes",
-		Description: "Full-text search over memory notes, best matches first. Any of the words may match.",
+		Name: "search_notes",
+		Description: "Search memory notes. Full-text query (notes with all words first, then some, recent notes slightly favoured) " +
+			"and/or filters by directory, tags, observation category and update date. With filters only, the newest matches come first.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in searchArgs) (*mcp.CallToolResult, any, error) {
-		dir, err := notes.CleanDir(in.Directory)
+		q, err := toQuery(in, time.Now())
 		if err != nil {
 			return nil, nil, err
 		}
-		hits, err := app.Index.Search(in.Query, dir, limit(in.Limit, 10))
+		hits, err := app.Index.Search(q)
 		if err != nil {
 			return nil, nil, err
 		}
-		return text(formatHits(fmt.Sprintf("No notes match %q.", in.Query), hits)), nil, nil
+		return text(formatHits("No notes match.", hits)), nil, nil
 	})
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -213,6 +219,52 @@ func New(app *memory.App, version string) *mcp.Server {
 	return s
 }
 
+func toQuery(in searchArgs, now time.Time) (index.Query, error) {
+	q := index.Query{Text: in.Query, Tags: in.Tags, Category: in.Category, Limit: limit(in.Limit, 10)}
+	var err error
+	if q.Dir, err = notes.CleanDir(in.Directory); err != nil {
+		return q, err
+	}
+	if q.Since, err = parseWhen(in.Since, now); err != nil {
+		return q, fmt.Errorf("since: %w", err)
+	}
+	if q.Before, err = parseWhen(in.Before, now); err != nil {
+		return q, fmt.Errorf("before: %w", err)
+	}
+	if strings.TrimSpace(q.Text) == "" && q.Dir == "" && len(q.Tags) == 0 && q.Category == "" && q.Since.IsZero() && q.Before.IsZero() {
+		return q, fmt.Errorf("give a query or at least one filter (directory, tags, category, since, before)")
+	}
+	return q, nil
+}
+
+// parseWhen accepts a date (2026-10-01), an RFC 3339 time, or a period back
+// from now: 7d, 2w, 3m or 1y.
+func parseWhen(s string, now time.Time) (time.Time, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return time.Time{}, nil
+	}
+	if t, err := time.Parse(time.DateOnly, s); err == nil {
+		return t, nil
+	}
+	if t, err := time.Parse(time.RFC3339, s); err == nil {
+		return t, nil
+	}
+	if n, err := strconv.Atoi(s[:len(s)-1]); err == nil && n >= 0 {
+		switch s[len(s)-1] {
+		case 'd':
+			return now.AddDate(0, 0, -n), nil
+		case 'w':
+			return now.AddDate(0, 0, -7*n), nil
+		case 'm':
+			return now.AddDate(0, -n, 0), nil
+		case 'y':
+			return now.AddDate(-n, 0, 0), nil
+		}
+	}
+	return time.Time{}, fmt.Errorf("%q is not a date (YYYY-MM-DD) or period (7d, 2w, 3m, 1y)", s)
+}
+
 func formatHits(empty string, hits []index.Hit) string {
 	if len(hits) == 0 {
 		return empty
@@ -224,7 +276,10 @@ func formatHits(empty string, hits []index.Hit) string {
 			fmt.Fprintf(&b, " #%s", strings.Join(h.Tags, " #"))
 		}
 		b.WriteString("\n")
-		if h.Snippet != "" {
+		for _, o := range h.Observations {
+			fmt.Fprintf(&b, "  - %s\n", o)
+		}
+		if h.Snippet != "" && len(h.Observations) == 0 {
 			fmt.Fprintf(&b, "  %s\n", strings.Join(strings.Fields(h.Snippet), " "))
 		}
 	}

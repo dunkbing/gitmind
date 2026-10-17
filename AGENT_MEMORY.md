@@ -11,6 +11,8 @@ for context that outlives a single session.
 **At the start of a task**
 - Run `search_notes` with the key topic of the task. If something relevant turns up,
   open it with `build_context` to see the related notes too, before planning.
+- To review past decisions or known pitfalls, filter instead of guessing keywords:
+  `search_notes` with `category: "decision"` (or `gotcha`), `directory`, `tags` or `since: "30d"`.
 - When I say "continue", "pick up where we left off" or similar, check `recent_activity`
   first.
 

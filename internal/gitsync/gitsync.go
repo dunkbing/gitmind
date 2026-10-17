@@ -15,9 +15,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/dunkbing/memory-go/internal/lockfile"
+	"golang.org/x/text/unicode/norm"
 )
 
 type Repo struct{ Dir string }
@@ -241,6 +244,48 @@ func (r *Repo) ahead(ctx context.Context, branch string) bool {
 	return err != nil || out != "0"
 }
 
+// ChangeTimes reports when each file last changed: the author time of the
+// newest commit touching it, by slash-separated path. Files with uncommitted
+// changes are listed in dirty instead, since only their modification time is
+// meaningful.
+func (r *Repo) ChangeTimes(ctx context.Context) (committed map[string]time.Time, dirty map[string]bool, err error) {
+	committed, dirty = map[string]time.Time{}, map[string]bool{}
+	if r.head(ctx) != "" {
+		// Merge commits list no files, so each file gets the time of the
+		// last edit made to it on any machine.
+		out, err := r.run(ctx, "-c", "core.quotepath=off", "log", "--format=%x00%at", "--name-only", "--no-renames")
+		if err != nil {
+			return nil, nil, err
+		}
+		var at time.Time
+		for _, line := range strings.Split(out, "\n") {
+			if ts, ok := strings.CutPrefix(line, "\x00"); ok {
+				secs, err := strconv.ParseInt(ts, 10, 64)
+				if err != nil {
+					return nil, nil, fmt.Errorf("parse git log: %w", err)
+				}
+				at = time.Unix(secs, 0)
+			} else if line = norm.NFC.String(strings.TrimSpace(line)); line != "" {
+				if _, seen := committed[line]; !seen {
+					committed[line] = at // log is newest first
+				}
+			}
+		}
+	}
+	// -z keeps paths unquoted; the output is untrimmed because each entry
+	// starts with a status column that may be a space.
+	out, err := r.runRaw(ctx, "status", "--porcelain", "-z", "--no-renames", "--untracked-files=all")
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, entry := range strings.Split(out, "\x00") {
+		if len(entry) > 3 {
+			dirty[norm.NFC.String(entry[3:])] = true
+		}
+	}
+	return committed, dirty, nil
+}
+
 func (r *Repo) hasRemote(ctx context.Context) bool {
 	_, err := r.run(ctx, "remote", "get-url", "origin")
 	return err == nil
@@ -276,6 +321,12 @@ func (r *Repo) identity(ctx context.Context) []string {
 }
 
 func (r *Repo) run(ctx context.Context, args ...string) (string, error) {
+	out, err := r.runRaw(ctx, args...)
+	return strings.TrimSpace(out), err
+}
+
+// runRaw is run without trimming the output.
+func (r *Repo) runRaw(ctx context.Context, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = r.Dir
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_MERGE_AUTOEDIT=no")
@@ -283,7 +334,7 @@ func (r *Repo) run(ctx context.Context, args ...string) (string, error) {
 	if err != nil {
 		return "", &gitError{args: args, out: strings.TrimSpace(string(out)), err: err}
 	}
-	return strings.TrimSpace(string(out)), nil
+	return string(out), nil
 }
 
 // lock serializes git operations across every memory-go process sharing the

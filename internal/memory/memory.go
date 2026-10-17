@@ -57,11 +57,33 @@ func Open(dir string, logger *log.Logger) (*App, error) {
 		Log:   logger,
 		host:  strings.Split(host, ".")[0],
 	}
-	if _, err := a.Index.Sync(a.Store); err != nil {
+	if _, err := a.reindex(context.Background()); err != nil {
 		ix.Close()
 		return nil, fmt.Errorf("index notes: %w", err)
 	}
 	return a, nil
+}
+
+// reindex picks up files that changed on disk. Their "updated" time comes
+// from git, because a pull resets modification times: a note pulled today
+// but written last month must not look new.
+func (a *App) reindex(ctx context.Context) (int, error) {
+	var committed map[string]time.Time
+	var dirty map[string]bool
+	loaded := false
+	return a.Index.Sync(a.Store, func(rel string, mod time.Time) time.Time {
+		if !loaded {
+			loaded = true
+			var err error
+			if committed, dirty, err = a.Repo.ChangeTimes(ctx); err != nil {
+				a.Log.Printf("reading change times from git, using file times: %v", err)
+			}
+		}
+		if t, ok := committed[rel]; ok && !dirty[rel] {
+			return t
+		}
+		return mod
+	})
 }
 
 // StartAutoSync syncs once in the background right away, then every
@@ -271,7 +293,7 @@ func (a *App) Sync(ctx context.Context) (gitsync.Result, error) {
 	a.mu.Unlock()
 
 	res, err := a.Repo.Sync(ctx, a.message("sync", "local edits"))
-	if _, ierr := a.Index.Sync(a.Store); ierr != nil && err == nil {
+	if _, ierr := a.reindex(ctx); ierr != nil && err == nil {
 		err = ierr
 	}
 	return res, err
@@ -289,7 +311,7 @@ func (a *App) save(ctx context.Context, n notes.Note, verb string) error {
 	if err != nil {
 		return err
 	}
-	if err := a.Index.Upsert(n, mod); err != nil {
+	if err := a.Index.Upsert(n, mod, time.Now()); err != nil {
 		return err
 	}
 	if _, err := a.Repo.Commit(ctx, a.message(verb, n.Path), n.Path); err != nil {

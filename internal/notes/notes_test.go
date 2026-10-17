@@ -104,3 +104,25 @@ func TestLinks(t *testing.T) {
 		}
 	}
 }
+
+func TestObservationsAndInlineTags(t *testing.T) {
+	body := "# Heading is not a tag\n" +
+		"- [Decision] use JWT for sessions #auth #Security\n" +
+		"- [ ] a todo, not an observation\n" +
+		"- [x] a done todo #chore\n" +
+		"* [gotcha] tokens expire after 15m (see [[Auth]])\n" +
+		"See https://example.com/page#fragment and issue #123.\n" +
+		"```\n- [decision] inside code #notatag\n```\n" +
+		"Plain prose with a #prose-tag/.\n"
+	wantObs := []Observation{
+		{Category: "decision", Text: "use JWT for sessions #auth #Security"},
+		{Category: "gotcha", Text: "tokens expire after 15m (see [[Auth]])"},
+	}
+	if got := Observations(body); !reflect.DeepEqual(got, wantObs) {
+		t.Errorf("Observations =\n%#v\nwant\n%#v", got, wantObs)
+	}
+	wantTags := []string{"auth", "security", "chore", "prose-tag"}
+	if got := InlineTags(body); !reflect.DeepEqual(got, wantTags) {
+		t.Errorf("InlineTags = %q, want %q", got, wantTags)
+	}
+}

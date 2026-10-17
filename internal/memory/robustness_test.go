@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dunkbing/memory-go/internal/index"
 	"golang.org/x/text/unicode/norm"
 )
 
@@ -232,7 +233,7 @@ func TestAutoSyncPullsInBackground(t *testing.T) {
 
 	deadline := time.Now().Add(10 * time.Second)
 	for {
-		hits, err := desktop.Index.Search("background", "", 10)
+		hits, err := desktop.Index.Search(index.Query{Text: "background"})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -244,4 +245,74 @@ func TestAutoSyncPullsInBackground(t *testing.T) {
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
+}
+
+func TestRecencySurvivesPull(t *testing.T) {
+	noBackgroundPush(t)
+	ctx := context.Background()
+	remote := bareRemote(t)
+	laptop := machine(t, remote, "laptop")
+
+	// A note written long ago, committed with its real date.
+	note := "---\ntitle: Old decision\n---\n\n- [decision] chose SQLite\n"
+	if err := os.WriteFile(filepath.Join(laptop.Store.Root, "old-decision.md"), []byte(note), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git(t, laptop.Store.Root, "add", "old-decision.md")
+	cmd := exec.Command("git", "-C", laptop.Store.Root, "commit", "-q", "-m", "old")
+	cmd.Env = append(os.Environ(), "GIT_AUTHOR_DATE=2024-03-01T12:00:00Z", "GIT_COMMITTER_DATE=2024-03-01T12:00:00Z")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("commit: %v: %s", err, out)
+	}
+	mustSync(t, laptop)
+
+	// A fresh machine pulls it today, after writing a note of its own.
+	desktop := machine(t, remote, "desktop")
+	if _, _, err := desktop.Write(ctx, "New note", "", "written today", nil, false); err != nil {
+		t.Fatal(err)
+	}
+	mustSync(t, desktop)
+
+	hits, err := desktop.Index.Recent(10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := paths(hits); len(got) != 2 || got[0] != "new-note.md" {
+		t.Fatalf("recent = %v, want the note written today first", got)
+	}
+	if y := hits[1].Modified.UTC().Year(); y != 2024 {
+		t.Errorf("pulled note shows as updated in %d, want its commit year 2024", y)
+	}
+	old := desktop.mustSearch(t, index.Query{Before: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)})
+	if len(old) != 1 || old[0].Path != "old-decision.md" {
+		t.Errorf("date filter after pull = %v", paths(old))
+	}
+
+	// Editing a pulled file outside memory-go (uncommitted) makes it recent.
+	if _, err := desktop.Store.Write(desktop.mustRead(t, "old-decision.md", "- [decision] still SQLite")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := desktop.reindex(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if hits, _ := desktop.Index.Recent(1); hits[0].Path != "old-decision.md" {
+		t.Errorf("locally edited note should be most recent, got %v", paths(hits))
+	}
+}
+
+func paths(hits []index.Hit) []string {
+	var out []string
+	for _, h := range hits {
+		out = append(out, h.Path)
+	}
+	return out
+}
+
+func (a *App) mustSearch(t *testing.T, q index.Query) []index.Hit {
+	t.Helper()
+	hits, err := a.Index.Search(q)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return hits
 }

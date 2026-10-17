@@ -84,7 +84,7 @@ func main() {
 		err = reindex(*dir)
 	case "search":
 		err = withApp(*dir, func(app *memory.App) error {
-			hits, err := app.Index.Search(strings.Join(args, " "), "", 20)
+			hits, err := app.Index.Search(index.Query{Text: strings.Join(args, " "), Limit: 20})
 			printHits(hits)
 			return err
 		})
