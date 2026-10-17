@@ -77,3 +77,30 @@ func TestStoreRejectsEscapes(t *testing.T) {
 		}
 	}
 }
+
+func TestLinks(t *testing.T) {
+	body := "- depends on [[Auth Service]]\n" +
+		"- [decision] use JWT, see [[Token format#Claims|claims]] and [[ops/Runbook]]\n" +
+		"Prose mentioning [[Auth Service]] again.\n" +
+		"```\n[[Not a link]]\n```\n" +
+		"- this line explains a lot of things before [[Glossary]]\n"
+	want := []Link{
+		{Target: "Auth Service", Relation: "depends on"},
+		{Target: "Token format"},
+		{Target: "ops/Runbook"},
+		{Target: "Auth Service"},
+		{Target: "Glossary"},
+	}
+	if got := Links(body); !reflect.DeepEqual(got, want) {
+		t.Fatalf("Links =\n%#v\nwant\n%#v", got, want)
+	}
+	for in, want := range map[string][2]string{
+		"Auth Service":   {"", "auth-service"},
+		"ops/Runbook.md": {"ops/runbook.md", "runbook"},
+		"Đà Nẵng":        {"", "da-nang"},
+	} {
+		if p, s := LinkTarget(in); p != want[0] || s != want[1] {
+			t.Errorf("LinkTarget(%q) = %q, %q; want %q, %q", in, p, s, want[0], want[1])
+		}
+	}
+}

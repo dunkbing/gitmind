@@ -43,6 +43,15 @@ type editArgs struct {
 	ExpectedReplacements int    `json:"expected_replacements,omitempty" jsonschema:"fail unless find_text occurs exactly this many times"`
 }
 
+type contextArgs struct {
+	Identifier string `json:"identifier" jsonschema:"note path, permalink or exact title"`
+	Depth      int    `json:"depth,omitempty" jsonschema:"1 for direct links (default), 2 to also list notes two links away"`
+}
+
+type projectArgs struct {
+	Project string `json:"project,omitempty" jsonschema:"project name: the git repository's directory name; omit for general notes only"`
+}
+
 type recentArgs struct {
 	Limit int `json:"limit,omitempty" jsonschema:"maximum number of notes (default 10)"`
 }
@@ -83,7 +92,47 @@ func New(app *memory.App, version string) *mcp.Server {
 		if err != nil {
 			return nil, nil, err
 		}
-		return text(fmt.Sprintf("path: %s\nmodified: %s\n\n%s", rel, mod.Format(time.RFC3339), n.Format())), nil, nil
+		out := fmt.Sprintf("path: %s\nmodified: %s\n\n%s", rel, mod.Format(time.RFC3339), n.Format())
+		back, err := app.Index.Backlinks(rel)
+		if err != nil {
+			return nil, nil, err
+		}
+		if len(back) > 0 {
+			titles := make([]string, len(back))
+			for i, h := range back {
+				titles[i] = "[[" + h.Title + "]]"
+			}
+			out += "\nLinked from: " + strings.Join(titles, ", ") + "\n"
+		}
+		return text(out), nil, nil
+	})
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name: "build_context",
+		Description: "Read a note together with its neighbourhood: the notes it links to, the notes linking to it " +
+			"(with a one-line summary of each), and links to notes not written yet. Use it to follow a topic across notes.",
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, in contextArgs) (*mcp.CallToolResult, any, error) {
+		out, err := app.BuildContext(in.Identifier, in.Depth)
+		if err != nil {
+			return nil, nil, err
+		}
+		return text(out), nil, nil
+	})
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name: "project_context",
+		Description: "Load what memory knows about a project: its notes, general cross-project notes and recent activity. " +
+			"Call it at the start of a session, unless that context was already provided.",
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, in projectArgs) (*mcp.CallToolResult, any, error) {
+		dir, err := notes.CleanDir(in.Project)
+		if err != nil {
+			return nil, nil, err
+		}
+		out, err := app.SessionContext(dir, 12000)
+		if err != nil {
+			return nil, nil, err
+		}
+		return text(out), nil, nil
 	})
 
 	mcp.AddTool(s, &mcp.Tool{

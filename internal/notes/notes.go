@@ -13,6 +13,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -341,4 +342,79 @@ func unquote(s string) string {
 		return strings.ReplaceAll(s[1:len(s)-1], "''", "'")
 	}
 	return s
+}
+
+// Link is a [[wiki link]] in a note body. Relation is the text before the
+// link on a list line, Basic Memory style ("- depends on [[Auth]]"), or "".
+type Link struct {
+	Target   string
+	Relation string
+}
+
+var linkRe = regexp.MustCompile(`\[\[([^\[\]|#]+)(?:#[^\[\]|]*)?(?:\|[^\[\]]*)?\]\]`)
+
+// Links returns the distinct links in body, ignoring fenced code blocks.
+func Links(body string) []Link {
+	var links []Link
+	seen := map[Link]bool{}
+	fenced := false
+	for _, line := range strings.Split(body, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "```") || strings.HasPrefix(trimmed, "~~~") {
+			fenced = !fenced
+			continue
+		}
+		if fenced {
+			continue
+		}
+		matches := linkRe.FindAllStringSubmatchIndex(line, -1)
+		for i, m := range matches {
+			l := Link{Target: strings.TrimSpace(line[m[2]:m[3]])}
+			if i == 0 && strings.HasPrefix(trimmed, "- ") {
+				l.Relation = relation(strings.TrimSpace(line[:m[0]]))
+			}
+			if l.Target != "" && !seen[l] {
+				seen[l] = true
+				links = append(links, l)
+			}
+		}
+	}
+	return links
+}
+
+// relation extracts "depends on" from a line prefix like "- depends on".
+// Observation lines ("- [decision] ...") and long prose aren't relations.
+func relation(prefix string) string {
+	r := strings.TrimSpace(strings.TrimPrefix(prefix, "-"))
+	if r == "" || strings.ContainsAny(r, "[]()#:.,") || len(strings.Fields(r)) > 4 {
+		return ""
+	}
+	return strings.ToLower(r)
+}
+
+// LinkTarget maps a link target to the note path it names ("" for the
+// directory part when the link has none) and the slug of its file name.
+func LinkTarget(target string) (notePath, slug string) {
+	target = strings.TrimSuffix(norm.NFC.String(strings.TrimSpace(target)), ".md")
+	dir, base := path.Split(target)
+	slug = Slugify(base)
+	if d, err := CleanDir(dir); err == nil && d != "" {
+		return d + "/" + slug + ".md", slug
+	}
+	return "", slug
+}
+
+// Summary returns the first meaningful line of body, shortened.
+func Summary(body string) string {
+	for _, line := range strings.Split(body, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, "```") || line == "---" {
+			continue
+		}
+		if r := []rune(line); len(r) > 160 {
+			return string(r[:159]) + "…"
+		}
+		return line
+	}
+	return ""
 }

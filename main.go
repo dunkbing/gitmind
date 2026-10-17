@@ -5,8 +5,10 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/signal"
@@ -19,6 +21,7 @@ import (
 	"github.com/dunkbing/memory-go/internal/gitsync"
 	"github.com/dunkbing/memory-go/internal/index"
 	"github.com/dunkbing/memory-go/internal/memory"
+	"github.com/dunkbing/memory-go/internal/notes"
 	"github.com/dunkbing/memory-go/internal/server"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -32,6 +35,11 @@ Usage:
 
 Commands:
   serve              run the MCP server on stdio (default)
+  context            print memory for the current project, for a SessionStart
+                     hook (reads the hook's JSON from stdin when piped)
+                       --cwd DIR       project directory (default: hook cwd, else .)
+                       --project NAME  memory directory to use instead
+                       --budget BYTES  rough size limit (default 8000)
   init [REMOTE]      create the notes repository, cloning REMOTE when given;
                      on an existing repository, adds REMOTE as origin
   sync               commit local edits, pull and push
@@ -62,6 +70,8 @@ func main() {
 	switch cmd {
 	case "serve":
 		err = serve(ctx, *dir, *interval)
+	case "context":
+		sessionContext(*dir, args)
 	case "init":
 		err = initRepo(ctx, *dir, args)
 	case "sync":
@@ -117,6 +127,86 @@ func serve(ctx context.Context, dir string, interval time.Duration) error {
 	defer app.Close()
 	app.StartAutoSync(interval)
 	return server.New(app, version).Run(ctx, &mcp.StdioTransport{})
+}
+
+// sessionContext prints the project's memory for a SessionStart hook. It
+// never fails: a broken memory must not block an agent session, so problems
+// go to stderr and the command exits 0 with whatever it could produce.
+func sessionContext(dir string, args []string) {
+	fs := flag.NewFlagSet("context", flag.ExitOnError)
+	cwd := fs.String("cwd", "", "project directory")
+	project := fs.String("project", "", "memory directory to use")
+	budget := fs.Int("budget", 8000, "rough size limit in bytes")
+	fs.Parse(args)
+
+	if *cwd == "" {
+		*cwd = hookCwd()
+	}
+	if *cwd == "" {
+		*cwd, _ = os.Getwd()
+	}
+	name := *project
+	if name == "" {
+		name = memory.ProjectName(*cwd)
+	} else if clean, err := notes.CleanDir(name); err == nil {
+		name = clean
+	}
+	if !gitsync.IsRepo(dir) {
+		log.Printf("no notes repository at %s; run `memory-go init`", dir)
+		return
+	}
+	app, err := memory.Open(dir, log.Default())
+	if err != nil {
+		log.Print(err)
+		return
+	}
+	defer app.Close()
+
+	// Pull first so the session starts with notes saved on other machines,
+	// but don't hold the session up for long.
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	if _, err := app.Sync(ctx); err != nil {
+		log.Printf("sync failed, showing local notes: %v", err)
+	}
+	cancel()
+
+	out, err := app.SessionContext(name, *budget)
+	if err != nil {
+		log.Print(err)
+		return
+	}
+	// Claude Code truncates hook output past 10,000 characters to a short
+	// preview, so never let the context get there.
+	if r := []rune(out); len(r) > hookOutputLimit {
+		out = string(r[:hookOutputLimit]) + "\n… (truncated; use search_notes for more)\n"
+	}
+	fmt.Print(out)
+}
+
+const hookOutputLimit = 9500
+
+// hookCwd reads the cwd field of the JSON a Claude Code hook receives on
+// stdin, if stdin is piped.
+func hookCwd() string {
+	info, err := os.Stdin.Stat()
+	if err != nil || info.Mode()&os.ModeCharDevice != 0 {
+		return ""
+	}
+	done := make(chan []byte, 1)
+	go func() {
+		data, _ := io.ReadAll(io.LimitReader(os.Stdin, 1<<20))
+		done <- data
+	}()
+	select {
+	case data := <-done:
+		var input struct {
+			Cwd string `json:"cwd"`
+		}
+		json.Unmarshal(data, &input)
+		return input.Cwd
+	case <-time.After(2 * time.Second):
+		return ""
+	}
 }
 
 func initRepo(ctx context.Context, dir string, args []string) error {

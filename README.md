@@ -47,13 +47,37 @@ command = "memory-go"
 Then append [AGENT_MEMORY.md](AGENT_MEMORY.md) to `~/.claude/CLAUDE.md` and
 `~/.codex/AGENTS.md` so agents know when to search and save.
 
+### Automatic recall (Claude Code)
+
+A SessionStart hook loads the current project's notes, your `general/` notes
+and recent activity into every new session, so memory shows up even when the
+agent forgets to search. Add to `~/.claude/settings.json`:
+
+```json
+{
+  "hooks": {
+    "SessionStart": [
+      { "hooks": [{ "type": "command", "command": "memory-go context", "timeout": 30 }] }
+    ]
+  }
+}
+```
+
+The project is the git repository's name (the main checkout's name inside a
+worktree), so notes saved under that directory come back automatically.
+Output stays under Claude Code's 10,000-character hook limit; notes that don't
+fit are listed by title. Agents without hooks (e.g. Codex) can call the
+`project_context` tool instead, as AGENT_MEMORY.md tells them to.
+
 ## Tools
 
 | Tool | What it does |
 |---|---|
 | `search_notes` | Full-text search (SQLite FTS5, BM25; title > tags > body) |
-| `read_note` | Read a note by path, permalink or title |
-| `write_note` | Create a note, or replace one with the same title and directory |
+| `read_note` | Read a note by path, permalink or title, with its backlinks |
+| `build_context` | A note plus the notes it links to and from, and links to notes not written yet (`depth: 2` goes one step further) |
+| `project_context` | A project's notes, general notes and recent activity, for the start of a session |
+| `write_note` | Create a note; replacing an existing one needs `overwrite: true` |
 | `edit_note` | `append`, `prepend` or `find_replace` inside a note |
 | `delete_note` | Delete a note (git history keeps it) |
 | `recent_activity` | Most recently changed notes |
@@ -62,7 +86,8 @@ Then append [AGENT_MEMORY.md](AGENT_MEMORY.md) to `~/.claude/CLAUDE.md` and
 
 ## Syncing
 
-- **Startup:** commits stray local edits (e.g. made in Obsidian), pulls, pushes.
+- **Startup and every 3 minutes** (in the background): commits stray local
+  edits (e.g. made in Obsidian), pulls, pushes.
 - **Every write:** committed immediately; pushed after 5 seconds of quiet and
   again when the session ends.
 - **Conflicts:** `*.md` uses git's `union` merge driver, so two machines
@@ -75,12 +100,14 @@ Then append [AGENT_MEMORY.md](AGENT_MEMORY.md) to `~/.claude/CLAUDE.md` and
 ## CLI
 
 ```
-memory-go [--dir DIR] [serve|init [REMOTE]|sync|reindex|search QUERY|recent [N]|version]
+memory-go [--dir DIR] [--sync-interval 3m] [serve|context|init [REMOTE]|sync|reindex|search QUERY|recent [N]|version]
 ```
 
 The notes directory defaults to `$MEMORY_GO_DIR`, then `~/.memory-go`.
 Notes use the same frontmatter and `- [category] fact #tag` / `[[Link]]` style
-as Basic Memory, so the folder opens as an Obsidian vault.
+as Basic Memory, so the folder opens as an Obsidian vault. Links resolve by
+file name or title (`[[Auth service]]`), or by path (`[[ops/runbook]]`); a list
+line like `- depends on [[Auth service]]` records "depends on" as the relation.
 
 ## Limitations
 

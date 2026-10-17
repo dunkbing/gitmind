@@ -4,9 +4,13 @@ You have a persistent, shared memory via the `memory-go` MCP server. It is share
 across my machines and agents (Claude Code, Codex), so treat it as the source of truth
 for context that outlives a single session.
 
+**At the start of a session**
+- If a "Memory (memory-go)" section isn't already in your context, call `project_context`
+  with the project name (the git repository's directory name).
+
 **At the start of a task**
-- Run `search_notes` with the project name and the key topic of the task. If something
-  relevant turns up, open it with `read_note` before planning.
+- Run `search_notes` with the key topic of the task. If something relevant turns up,
+  open it with `build_context` to see the related notes too, before planning.
 - When I say "continue", "pick up where we left off" or similar, check `recent_activity`
   first.
 
@@ -24,7 +28,7 @@ for context that outlives a single session.
 - Update an existing note with `edit_note` rather than creating a near-duplicate; search
   first.
 - One topic per note. Use a clear title and put it in a directory named after the
-  project (e.g. `myapp/`); use `general/` for cross-project preferences.
+  project's git repository (e.g. `myapp/`); use `general/` for cross-project preferences.
 - Write observations as `- [category] fact #tag` (categories such as decision,
   preference, gotcha, setup) and link related notes with `[[Note Title]]`.
 - Briefly tell me what you saved or updated.
