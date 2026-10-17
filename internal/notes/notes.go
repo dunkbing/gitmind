@@ -27,6 +27,8 @@ type Note struct {
 	Title   string
 	Tags    []string
 	Created time.Time
+	Pinned  bool     // always shown in full at session start
+	Locked  bool     // written by hand; agents must not change it
 	Extra   []string // unknown frontmatter lines, preserved as-is
 	Body    string
 }
@@ -86,6 +88,10 @@ func Parse(p string, data []byte) Note {
 			if t, err := time.Parse(time.RFC3339, unquote(v)); err == nil {
 				n.Created = t
 			}
+		case "pinned":
+			n.Pinned = isTrue(v)
+		case "locked":
+			n.Locked = isTrue(v)
 		default:
 			n.Extra = append(n.Extra, line)
 		}
@@ -106,6 +112,12 @@ func (n Note) Format() []byte {
 	}
 	if !n.Created.IsZero() {
 		fmt.Fprintf(&b, "created: %s\n", n.Created.UTC().Format(time.RFC3339))
+	}
+	if n.Pinned {
+		b.WriteString("pinned: true\n")
+	}
+	if n.Locked {
+		b.WriteString("locked: true\n")
 	}
 	for _, line := range n.Extra {
 		b.WriteString(line + "\n")
@@ -351,6 +363,14 @@ func (s Store) Walk(fn func(rel string, mod time.Time) error) error {
 		// so paths match across machines.
 		return fn(norm.NFC.String(filepath.ToSlash(rel)), info.ModTime())
 	})
+}
+
+func isTrue(v string) bool {
+	switch strings.ToLower(unquote(strings.TrimSpace(v))) {
+	case "true", "yes", "on":
+		return true
+	}
+	return false
 }
 
 func yamlString(s string) string {

@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/dunkbing/memory-go/internal/gitsync"
+	"github.com/dunkbing/memory-go/internal/hooks"
 	"github.com/dunkbing/memory-go/internal/index"
 	"github.com/dunkbing/memory-go/internal/memory"
 	"github.com/dunkbing/memory-go/internal/notes"
@@ -40,6 +41,9 @@ Commands:
                        --cwd DIR       project directory (default: hook cwd, else .)
                        --project NAME  memory directory to use instead
                        --budget BYTES  rough size limit (default 8000)
+  nudge              for a Stop hook: after substantial work with no memory
+                     write, remind the agent once to save what it learned
+                       --threshold N   tool calls that count as substantial (default 10)
   init [REMOTE]      create the notes repository, cloning REMOTE when given;
                      on an existing repository, adds REMOTE as origin
   sync               commit local edits, pull and push
@@ -72,6 +76,8 @@ func main() {
 		err = serve(ctx, *dir, *interval)
 	case "context":
 		sessionContext(*dir, args)
+	case "nudge":
+		nudge(*dir, args)
 	case "init":
 		err = initRepo(ctx, *dir, args)
 	case "sync":
@@ -140,7 +146,11 @@ func sessionContext(dir string, args []string) {
 	fs.Parse(args)
 
 	if *cwd == "" {
-		*cwd = hookCwd()
+		var input struct {
+			Cwd string `json:"cwd"`
+		}
+		json.Unmarshal(hookInput(), &input)
+		*cwd = input.Cwd
 	}
 	if *cwd == "" {
 		*cwd, _ = os.Getwd()
@@ -185,12 +195,38 @@ func sessionContext(dir string, args []string) {
 
 const hookOutputLimit = 9500
 
-// hookCwd reads the cwd field of the JSON a Claude Code hook receives on
-// stdin, if stdin is piped.
-func hookCwd() string {
+// nudge implements a Claude Code Stop hook. Like sessionContext it never
+// fails the hook: problems go to stderr and the agent is allowed to stop.
+func nudge(dir string, args []string) {
+	fs := flag.NewFlagSet("nudge", flag.ExitOnError)
+	threshold := fs.Int("threshold", 10, "tool calls since the last memory write that count as substantial work")
+	fs.Parse(args)
+
+	var input hooks.StopInput
+	if err := json.Unmarshal(hookInput(), &input); err != nil {
+		return
+	}
+	reason, err := hooks.Nudge(input, filepath.Join(dir, ".memory-go", "nudges"), *threshold)
+	if err != nil {
+		log.Print(err)
+		return
+	}
+	if reason == "" {
+		return
+	}
+	// additionalContext continues the session with non-error feedback.
+	out, _ := json.Marshal(map[string]any{
+		"hookSpecificOutput": map[string]string{"hookEventName": "Stop", "additionalContext": reason},
+	})
+	fmt.Println(string(out))
+}
+
+// hookInput reads the JSON a Claude Code hook receives on stdin, if stdin is
+// piped, giving up after two seconds.
+func hookInput() []byte {
 	info, err := os.Stdin.Stat()
 	if err != nil || info.Mode()&os.ModeCharDevice != 0 {
-		return ""
+		return nil
 	}
 	done := make(chan []byte, 1)
 	go func() {
@@ -199,13 +235,9 @@ func hookCwd() string {
 	}()
 	select {
 	case data := <-done:
-		var input struct {
-			Cwd string `json:"cwd"`
-		}
-		json.Unmarshal(data, &input)
-		return input.Cwd
+		return data
 	case <-time.After(2 * time.Second):
-		return ""
+		return nil
 	}
 }
 

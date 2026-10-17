@@ -13,6 +13,8 @@ func TestRoundTrip(t *testing.T) {
 		Title:   "Deploy: steps & gotchas",
 		Tags:    []string{"ops", "deploy"},
 		Created: time.Date(2026, 10, 17, 12, 0, 0, 0, time.UTC),
+		Pinned:  true,
+		Locked:  true,
 		Extra:   []string{"type: note", "aliases:", "  - shipping"},
 		Body:    "- [gotcha] run migrations first #db\n",
 	}

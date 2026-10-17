@@ -47,27 +47,36 @@ command = "memory-go"
 Then append [AGENT_MEMORY.md](AGENT_MEMORY.md) to `~/.claude/CLAUDE.md` and
 `~/.codex/AGENTS.md` so agents know when to search and save.
 
-### Automatic recall (Claude Code)
+### Hooks (Claude Code)
 
-A SessionStart hook loads the current project's notes, your `general/` notes
-and recent activity into every new session, so memory shows up even when the
-agent forgets to search. Add to `~/.claude/settings.json`:
+Two hooks make memory automatic. Add to `~/.claude/settings.json`:
 
 ```json
 {
   "hooks": {
     "SessionStart": [
       { "hooks": [{ "type": "command", "command": "memory-go context", "timeout": 30 }] }
+    ],
+    "Stop": [
+      { "hooks": [{ "type": "command", "command": "memory-go nudge", "timeout": 10 }] }
     ]
   }
 }
 ```
 
-The project is the git repository's name (the main checkout's name inside a
-worktree), so notes saved under that directory come back automatically.
-Output stays under Claude Code's 10,000-character hook limit; notes that don't
-fit are listed by title. Agents without hooks (e.g. Codex) can call the
-`project_context` tool instead, as AGENT_MEMORY.md tells them to.
+- **`memory-go context`** (recall) loads pinned notes in full, plus a one-line
+  index of the current project's notes, your `general/` notes and recent
+  activity elsewhere. The project is the git repository's name (the main
+  checkout's name inside a worktree). Output stays under Claude Code's
+  10,000-character hook limit; whatever doesn't fit is counted, with a pointer
+  to `list_notes`.
+- **`memory-go nudge`** (capture): when the agent is about to stop after 10 or
+  more tool calls with no memory write, it's reminded once to save what's worth
+  keeping, and told to save nothing rather than noise. `--threshold N` changes
+  the bar.
+
+Agents without hooks (e.g. Codex) can call the `project_context` tool instead,
+as AGENT_MEMORY.md tells them to.
 
 ## Tools
 
@@ -77,7 +86,8 @@ fit are listed by title. Agents without hooks (e.g. Codex) can call the
 | `read_note` | Read a note by path, permalink or title, with its backlinks |
 | `build_context` | A note plus the notes it links to and from, and links to notes not written yet (`depth: 2` goes one step further) |
 | `project_context` | A project's notes, general notes and recent activity, for the start of a session |
-| `write_note` | Create a note; replacing an existing one needs `overwrite: true` |
+| `write_note` | Create a note (the reply lists possibly overlapping notes, to merge instead of duplicating); replacing an existing one needs `overwrite: true` |
+| `pin_note` | Show a note in full at every session start (or unpin it) |
 | `edit_note` | `append`, `prepend`, `find_replace`, or `replace_section` (everything under a heading, added if missing) |
 | `move_note` | New directory and/or title; links to the note are updated, and git history follows the rename |
 | `delete_note` | Delete a note (git history keeps it) |
@@ -106,7 +116,10 @@ memory-go [--dir DIR] [--sync-interval 3m] [serve|context|init [REMOTE]|sync|rei
 
 The notes directory defaults to `$MEMORY_GO_DIR`, then `~/.memory-go`.
 Notes use the same frontmatter and `- [category] fact #tag` / `[[Link]]` style
-as Basic Memory, so the folder opens as an Obsidian vault. Links resolve by
+as Basic Memory, so the folder opens as an Obsidian vault. Two frontmatter
+flags are special: `pinned: true` shows the note in full at session start, and
+`locked: true` marks a note you maintain by hand, which agents can't edit,
+move, overwrite or delete. Links resolve by
 file name or title (`[[Auth service]]`), or by path (`[[ops/runbook]]`); a list
 line like `- depends on [[Auth service]]` records "depends on" as the relation.
 

@@ -15,8 +15,14 @@ import (
 )
 
 const instructions = `Persistent memory shared across the user's machines and agents, stored as Markdown notes in a git repository.
-Search it before starting work on a topic; save decisions, preferences, gotchas and setup knowledge when you finish.
-Prefer editing an existing note over creating a near-duplicate. Never store secrets.`
+Search it before starting work on a topic; save what a future session would otherwise have to rediscover when you finish.
+Save only durable facts that make sense on their own, outside this conversation. Prefer saving nothing over saving noise.
+A suggestion is not a decision until the user confirms it; your own output only counts once the user adopts it.
+Skip one-off requests, routine steps, and anything already in the code or git history. Never store secrets.
+Write facts as "- [category] fact #tag" with categories such as decision, preference, instruction (standing rules
+like "from now on..."), gotcha, anti-pattern, setup, task (with status), artifact (with a link).
+When a fact changes, update it and keep the old version under a "## History" section with the date, rather than
+silently overwriting. Prefer editing an existing note over creating a near-duplicate. Notes marked locked are the user's.`
 
 type searchArgs struct {
 	Query     string   `json:"query,omitempty" jsonschema:"words to look for in titles, tags and bodies; notes containing all of them rank first. May be omitted when filtering"`
@@ -38,6 +44,12 @@ type writeArgs struct {
 	Content   string   `json:"content" jsonschema:"Markdown body. Write facts as '- [category] fact #tag' and link notes with [[Title]]"`
 	Tags      []string `json:"tags,omitempty" jsonschema:"tags for the note; kept from the existing note when omitted"`
 	Overwrite bool     `json:"overwrite,omitempty" jsonschema:"replace the content of an existing note with the same title and directory (default false)"`
+	Pinned    bool     `json:"pinned,omitempty" jsonschema:"show this note in full at the start of every session; only for things the user wants always remembered"`
+}
+
+type pinArgs struct {
+	Identifier string `json:"identifier" jsonschema:"note path, permalink or exact title"`
+	Unpin      bool   `json:"unpin,omitempty" jsonschema:"remove the pin instead"`
 }
 
 type editArgs struct {
@@ -157,11 +169,36 @@ func New(app *memory.App, version string) *mcp.Server {
 		if err != nil {
 			return nil, nil, err
 		}
-		verb := "Updated"
-		if created {
-			verb = "Created"
+		if in.Pinned {
+			if _, err := app.Pin(ctx, rel, true); err != nil {
+				return nil, nil, err
+			}
 		}
-		return text(fmt.Sprintf("%s %s", verb, rel)), nil, nil
+		if !created {
+			return text("Updated " + rel), nil, nil
+		}
+		msg := "Created " + rel
+		// A cheap duplicate check: the agent decides whether to merge.
+		if similar, err := app.Similar(rel, 3); err == nil && len(similar) > 0 {
+			msg += "\n\nPossibly overlapping notes. If the new note duplicates one of them, merge it in with edit_note " +
+				"and delete the new one:\n" + formatHits("", similar)
+		}
+		return text(msg), nil, nil
+	})
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name: "pin_note",
+		Description: "Pin a note so it's shown in full at the start of every session (or unpin it). " +
+			"Use sparingly, for things the user wants always remembered; everything else appears as a one-line index entry.",
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, in pinArgs) (*mcp.CallToolResult, any, error) {
+		rel, err := app.Pin(ctx, in.Identifier, !in.Unpin)
+		if err != nil {
+			return nil, nil, err
+		}
+		if in.Unpin {
+			return text("Unpinned " + rel), nil, nil
+		}
+		return text("Pinned " + rel), nil, nil
 	})
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -305,6 +342,9 @@ func formatHits(empty string, hits []index.Hit) string {
 	var b strings.Builder
 	for _, h := range hits {
 		fmt.Fprintf(&b, "- %s (%s, modified %s)", h.Title, h.Path, h.Modified.Format("2006-01-02"))
+		if h.Pinned {
+			b.WriteString(" [pinned]")
+		}
 		if len(h.Tags) > 0 {
 			fmt.Fprintf(&b, " #%s", strings.Join(h.Tags, " #"))
 		}
@@ -312,8 +352,12 @@ func formatHits(empty string, hits []index.Hit) string {
 		for _, o := range h.Observations {
 			fmt.Fprintf(&b, "  - %s\n", o)
 		}
-		if h.Snippet != "" && len(h.Observations) == 0 {
+		switch {
+		case len(h.Observations) > 0:
+		case h.Snippet != "":
 			fmt.Fprintf(&b, "  %s\n", strings.Join(strings.Fields(h.Snippet), " "))
+		case h.Summary != "":
+			fmt.Fprintf(&b, "  %s\n", h.Summary)
 		}
 	}
 	return b.String()

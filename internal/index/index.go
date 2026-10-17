@@ -21,7 +21,7 @@ import (
 
 // schemaVersion is bumped whenever the schema changes; an index built with
 // another version is dropped and rebuilt from the notes on disk.
-const schemaVersion = 4
+const schemaVersion = 5
 
 const schema = `
 CREATE TABLE notes (
@@ -31,6 +31,8 @@ CREATE TABLE notes (
 	title      TEXT NOT NULL,
 	title_slug TEXT NOT NULL, -- slugified title, for notes whose title and file name differ
 	tags       TEXT NOT NULL, -- frontmatter and inline tags, space separated
+	summary    TEXT NOT NULL,    -- first meaningful line, for note indexes
+	pinned     INTEGER NOT NULL,
 	mtime      INTEGER NOT NULL, -- file modification time, only for change detection
 	updated    INTEGER NOT NULL  -- when the note last really changed, for ordering and display
 );
@@ -66,6 +68,8 @@ type Hit struct {
 	Tags         []string
 	Modified     time.Time
 	Snippet      string
+	Summary      string
+	Pinned       bool
 	Observations []string // lines matching Query.Category, when filtering by category
 }
 
@@ -206,8 +210,8 @@ func upsert(tx *sql.Tx, n notes.Note, mod, updated time.Time) error {
 	err := tx.QueryRow(`SELECT id FROM notes WHERE path = ?`, n.Path).Scan(&id)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
-		res, err := tx.Exec(`INSERT INTO notes (path, slug, title, title_slug, tags, mtime, updated) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-			n.Path, slug, n.Title, titleSlug, tags, mod.UnixNano(), updated.UnixNano())
+		res, err := tx.Exec(`INSERT INTO notes (path, slug, title, title_slug, tags, summary, pinned, mtime, updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			n.Path, slug, n.Title, titleSlug, tags, notes.Summary(n.Body), n.Pinned, mod.UnixNano(), updated.UnixNano())
 		if err != nil {
 			return err
 		}
@@ -217,8 +221,8 @@ func upsert(tx *sql.Tx, n notes.Note, mod, updated time.Time) error {
 	case err != nil:
 		return err
 	default:
-		if _, err := tx.Exec(`UPDATE notes SET title = ?, title_slug = ?, tags = ?, mtime = ?, updated = ? WHERE id = ?`,
-			n.Title, titleSlug, tags, mod.UnixNano(), updated.UnixNano(), id); err != nil {
+		if _, err := tx.Exec(`UPDATE notes SET title = ?, title_slug = ?, tags = ?, summary = ?, pinned = ?, mtime = ?, updated = ? WHERE id = ?`,
+			n.Title, titleSlug, tags, notes.Summary(n.Body), n.Pinned, mod.UnixNano(), updated.UnixNano(), id); err != nil {
 			return err
 		}
 		if err := removeDerived(tx, id); err != nil {
@@ -310,7 +314,7 @@ func (ix *Index) Search(q Query) ([]Hit, error) {
 	switch {
 	case len(terms) == 0:
 		hits, err = ix.query(`
-			SELECT n.path, n.title, n.tags, n.updated, ''
+			SELECT `+hitColumns+`, ''
 			FROM notes n WHERE 1 = 1`+filter+`
 			ORDER BY n.updated DESC LIMIT ?`, append(args, q.Limit)...)
 	default:
@@ -338,7 +342,7 @@ func (ix *Index) ftsSearch(match, filter string, filterArgs []any, limit int) ([
 	args := append([]any{match}, filterArgs...)
 	args = append(args, time.Now().UnixNano(), limit)
 	return ix.query(`
-		SELECT n.path, n.title, n.tags, n.updated, snippet(notes_fts, 2, '**', '**', '…', 16)
+		SELECT `+hitColumns+`, snippet(notes_fts, 2, '**', '**', '…', 16)
 		FROM notes_fts JOIN notes n ON n.id = notes_fts.rowid
 		WHERE notes_fts MATCH ?`+filter+`
 		ORDER BY bm25(notes_fts, 10.0, 5.0, 1.0) * `+recencyBoost+`
@@ -407,12 +411,43 @@ func appendNew(hits, more []Hit, limit int) []Hit {
 }
 
 func (ix *Index) Recent(limit int) ([]Hit, error) {
-	return ix.query(`SELECT path, title, tags, updated, '' FROM notes ORDER BY updated DESC LIMIT ?`, limit)
+	return ix.query(`SELECT `+hitColumns+`, '' FROM notes n ORDER BY n.updated DESC LIMIT ?`, limit)
 }
 
 func (ix *Index) List(dir string) ([]Hit, error) {
-	return ix.query(`SELECT path, title, tags, updated, '' FROM notes
-		WHERE ? = '' OR path LIKE ? || '/%' ORDER BY path`, dir, dir)
+	return ix.query(`SELECT `+hitColumns+`, '' FROM notes n
+		WHERE ? = '' OR n.path LIKE ? || '/%' ORDER BY n.path`, dir, dir)
+}
+
+// Similar returns up to limit other notes whose title or tags share a word
+// with n's title or tags: likely duplicates worth merging into.
+func (ix *Index) Similar(n notes.Note, limit int) ([]Hit, error) {
+	var words []string
+	seen := map[string]bool{}
+	for _, w := range ftsWords(n.Title + " " + strings.Join(n.Tags, " ")) {
+		w = strings.ToLower(w)
+		if len([]rune(w)) < 3 || stopWords[w] || seen[w] {
+			continue
+		}
+		seen[w] = true
+		words = append(words, `"`+w+`"*`)
+	}
+	if len(words) == 0 {
+		return nil, nil
+	}
+	return ix.query(`
+		SELECT `+hitColumns+`, ''
+		FROM notes_fts JOIN notes n ON n.id = notes_fts.rowid
+		WHERE notes_fts MATCH ? AND n.path != ?
+		ORDER BY bm25(notes_fts, 10.0, 5.0, 1.0)
+		LIMIT ?`, "{title tags} : ("+strings.Join(words, " OR ")+")", n.Path, limit)
+}
+
+// stopWords are too common in titles to suggest a duplicate.
+var stopWords = map[string]bool{
+	"the": true, "and": true, "for": true, "with": true, "from": true, "into": true, "about": true,
+	"notes": true, "note": true, "how": true, "what": true, "why": true, "when": true, "use": true,
+	"using": true, "our": true, "new": true, "old": true,
 }
 
 // LinkHit is a note on the other end of a link.
@@ -500,7 +535,10 @@ func (ix *Index) FindByTitle(title string) ([]string, error) {
 	return paths, rows.Err()
 }
 
-// query runs a statement selecting path, title, tags, updated and snippet.
+// hitColumns are the notes columns query scans, before the snippet.
+const hitColumns = `n.path, n.title, n.tags, n.updated, n.summary, n.pinned`
+
+// query runs a statement selecting hitColumns and then a snippet.
 func (ix *Index) query(q string, args ...any) ([]Hit, error) {
 	rows, err := ix.db.Query(q, args...)
 	if err != nil {
@@ -512,7 +550,7 @@ func (ix *Index) query(q string, args ...any) ([]Hit, error) {
 		var h Hit
 		var tags string
 		var updated int64
-		if err := rows.Scan(&h.Path, &h.Title, &tags, &updated, &h.Snippet); err != nil {
+		if err := rows.Scan(&h.Path, &h.Title, &tags, &updated, &h.Summary, &h.Pinned, &h.Snippet); err != nil {
 			return nil, err
 		}
 		h.Tags = strings.Fields(tags)
@@ -525,12 +563,16 @@ func (ix *Index) query(q string, args ...any) ([]Hit, error) {
 // ftsTerms turns free text into quoted FTS5 prefix terms, so user input can
 // never be parsed as FTS syntax.
 func ftsTerms(q string) []string {
-	words := strings.FieldsFunc(q, func(r rune) bool {
-		return !unicode.IsLetter(r) && !unicode.IsNumber(r) && r != '_'
-	})
+	words := ftsWords(q)
 	terms := make([]string, len(words))
 	for i, w := range words {
 		terms[i] = `"` + w + `"*`
 	}
 	return terms
+}
+
+func ftsWords(s string) []string {
+	return strings.FieldsFunc(s, func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsNumber(r) && r != '_'
+	})
 }

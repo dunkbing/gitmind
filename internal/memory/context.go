@@ -122,13 +122,16 @@ func (a *App) summary(rel string) string {
 	return notes.Summary(n.Body)
 }
 
-// maxNoteChars caps how much of one note SessionContext includes, so a single
-// long note can't crowd out the rest.
+// maxNoteChars caps how much of one pinned note SessionContext includes, so a
+// single long note can't crowd out the rest.
 const maxNoteChars = 1500
 
-// SessionContext renders what a new agent session should know up front: the
-// project's notes, cross-project notes in general/, and recent activity,
-// within roughly budget bytes. Notes that don't fit are listed by title.
+// SessionContext renders what a new agent session should know up front,
+// within roughly budget bytes: pinned notes (of the project and general/) in
+// full, then an index of the project's notes, general notes and recent
+// activity elsewhere, one line each, for the agent to open as needed. Keeping
+// most notes as an index scales to large memories and keeps the injected text
+// stable between sessions.
 func (a *App) SessionContext(project string, budget int) (string, error) {
 	var projectNotes []index.Hit
 	if project != "" {
@@ -151,8 +154,8 @@ func (a *App) SessionContext(project string, budget int) (string, error) {
 
 	var b strings.Builder
 	b.WriteString("# Memory (memory-go)\n\n")
-	b.WriteString("Persistent notes shared across the user's machines. Use the memory-go tools " +
-		"(search_notes, read_note, build_context, write_note, edit_note) to look things up and to save what you learn.\n")
+	b.WriteString("Persistent notes shared across the user's machines. Below: pinned notes in full, then an index of " +
+		"other notes; open them with read_note or build_context when relevant, and use search_notes for anything else.\n")
 	if project != "" {
 		fmt.Fprintf(&b, "Current project: %q. Save project-specific notes in directory %q; cross-project ones in \"general\".\n", project, project)
 	}
@@ -161,41 +164,14 @@ func (a *App) SessionContext(project string, budget int) (string, error) {
 		return b.String(), nil
 	}
 
+	// Pinned notes get at most 60% of the budget so the index always fits;
+	// pinned notes that don't fit are listed in the index instead.
+	var pinnedShown []string
 	shown := map[string]bool{}
-	if project != "" {
-		if len(projectNotes) == 0 {
-			fmt.Fprintf(&b, "\n## Project notes (%s)\nNone yet.\n", project)
-		} else {
-			a.writeNotes(&b, fmt.Sprintf("Project notes (%s)", project), projectNotes, budget, shown)
+	for _, h := range append(append([]index.Hit{}, projectNotes...), general...) {
+		if !h.Pinned {
+			continue
 		}
-	}
-	a.writeNotes(&b, "General notes", general, budget, shown)
-
-	var others []index.Hit
-	for _, h := range recent {
-		if !shown[h.Path] && len(others) < 5 {
-			others = append(others, h)
-		}
-	}
-	if len(others) > 0 {
-		b.WriteString("\n## Recently updated elsewhere\n")
-		for _, h := range others {
-			fmt.Fprintf(&b, "- %s (%s, %s)\n", h.Title, h.Path, h.Modified.Format("2006-01-02"))
-		}
-	}
-	return b.String(), nil
-}
-
-// writeNotes includes whole notes while the budget allows, then lists the
-// rest by title so the agent knows they exist.
-func (a *App) writeNotes(b *strings.Builder, heading string, hits []index.Hit, budget int, shown map[string]bool) {
-	if len(hits) == 0 {
-		return
-	}
-	fmt.Fprintf(b, "\n## %s\n", heading)
-	var rest []index.Hit
-	for _, h := range hits {
-		shown[h.Path] = true
 		n, _, err := a.Store.Read(h.Path)
 		if err != nil {
 			continue
@@ -205,22 +181,66 @@ func (a *App) writeNotes(b *strings.Builder, heading string, hits []index.Hit, b
 			body = string(r[:maxNoteChars]) + fmt.Sprintf("\n… (truncated; read_note %s for the rest)", h.Path)
 		}
 		entry := fmt.Sprintf("\n### %s (%s)\n%s\n", n.Title, h.Path, body)
-		if len(rest) > 0 || b.Len()+len(entry) > budget {
-			rest = append(rest, h)
+		if b.Len()+len(entry) > budget*6/10 {
 			continue
 		}
-		b.WriteString(entry)
-	}
-	if len(rest) > 0 {
-		const maxTitles = 25
-		b.WriteString("\nMore notes (use read_note):\n")
-		for i, h := range rest {
-			if i == maxTitles {
-				fmt.Fprintf(b, "- … and %d more (use list_notes or search_notes)\n", len(rest)-maxTitles)
-				break
-			}
-			fmt.Fprintf(b, "- %s (%s)\n", h.Title, h.Path)
+		if len(pinnedShown) == 0 {
+			b.WriteString("\n## Pinned notes\n")
 		}
+		b.WriteString(entry)
+		pinnedShown = append(pinnedShown, h.Path)
+		shown[h.Path] = true
+	}
+
+	if project != "" {
+		heading := fmt.Sprintf("\n## Project notes (%s)\n", project)
+		if len(projectNotes) == 0 {
+			b.WriteString(heading + "None yet.\n")
+		}
+		writeIndex(&b, heading, projectNotes, shown, budget, fmt.Sprintf("list_notes directory %q", project))
+	}
+	writeIndex(&b, "\n## General notes\n", general, shown, budget, `list_notes directory "general"`)
+	var others []index.Hit
+	for _, h := range recent {
+		if !shown[h.Path] && !strings.HasPrefix(h.Path, project+"/") && len(others) < 5 {
+			others = append(others, h)
+		}
+	}
+	writeIndex(&b, "\n## Recently updated elsewhere\n", others, shown, budget, "recent_activity")
+	return b.String(), nil
+}
+
+// writeIndex lists notes not shown yet under heading, one line each until
+// the budget runs out, then says how many more there are and where to find
+// them. It writes nothing when every note was already shown.
+func writeIndex(b *strings.Builder, heading string, hits []index.Hit, shown map[string]bool, budget int, more string) {
+	left := 0
+	wroteHeading := false
+	for _, h := range hits {
+		if shown[h.Path] {
+			continue
+		}
+		if !wroteHeading {
+			b.WriteString(heading)
+			wroteHeading = true
+		}
+		line := fmt.Sprintf("- %s (%s, %s)", h.Title, h.Path, h.Modified.Format("2006-01-02"))
+		if h.Pinned {
+			line += " [pinned]"
+		}
+		if h.Summary != "" {
+			line += ": " + h.Summary
+		}
+		line += "\n"
+		if left > 0 || b.Len()+len(line) > budget {
+			left++
+			continue
+		}
+		b.WriteString(line)
+		shown[h.Path] = true
+	}
+	if left > 0 {
+		fmt.Fprintf(b, "- … and %d more (%s)\n", left, more)
 	}
 }
 

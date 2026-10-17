@@ -202,8 +202,11 @@ func (a *App) Write(ctx context.Context, title, dir, content string, tags []stri
 			return "", false, fmt.Errorf("note %s already exists (titled %q); add to it with edit_note, "+
 				"or call write_note with overwrite=true to replace its content", n.Path, old.Title)
 		}
+		if old.Locked {
+			return "", false, lockedError(n.Path)
+		}
 		verb = "update"
-		n.Created, n.Extra = old.Created, old.Extra
+		n.Created, n.Extra, n.Pinned = old.Created, old.Extra, old.Pinned
 		if len(n.Tags) == 0 {
 			n.Tags = old.Tags
 		}
@@ -238,6 +241,9 @@ func (a *App) Edit(ctx context.Context, id string, op EditOp) (EditResult, error
 	n, _, err := a.Store.Read(rel)
 	if err != nil {
 		return EditResult{}, err
+	}
+	if n.Locked {
+		return EditResult{}, lockedError(rel)
 	}
 	if err := checkSecrets(op.Content, op.Section); err != nil {
 		return EditResult{}, err
@@ -290,6 +296,9 @@ func (a *App) Move(ctx context.Context, id string, dir *string, title string) (s
 	n, _, err := a.Store.Read(from)
 	if err != nil {
 		return "", nil, err
+	}
+	if n.Locked {
+		return "", nil, lockedError(from)
 	}
 
 	d := path.Dir(from)
@@ -387,6 +396,50 @@ func (a *App) Move(ctx context.Context, id string, dir *string, title string) (s
 	return to, updated, nil
 }
 
+// Pin marks a note to be shown in full at the start of every session, or
+// unpins it.
+func (a *App) Pin(ctx context.Context, id string, pinned bool) (string, error) {
+	unlock, err := a.writeLock()
+	if err != nil {
+		return "", err
+	}
+	defer unlock()
+	rel, err := a.Resolve(id)
+	if err != nil {
+		return "", err
+	}
+	n, _, err := a.Store.Read(rel)
+	if err != nil {
+		return "", err
+	}
+	if n.Locked {
+		return "", lockedError(rel)
+	}
+	if n.Pinned == pinned {
+		return rel, nil
+	}
+	n.Pinned = pinned
+	verb := "pin"
+	if !pinned {
+		verb = "unpin"
+	}
+	return rel, a.save(ctx, n, verb)
+}
+
+// Similar lists notes that look like possible duplicates of the note at rel.
+func (a *App) Similar(rel string, limit int) ([]index.Hit, error) {
+	n, _, err := a.Store.Read(rel)
+	if err != nil {
+		return nil, err
+	}
+	return a.Index.Similar(n, limit)
+}
+
+func lockedError(rel string) error {
+	return fmt.Errorf("%s is locked (locked: true in its frontmatter), meaning the user maintains it by hand; "+
+		"don't change it, and suggest the change to the user instead", rel)
+}
+
 func (a *App) Delete(ctx context.Context, id string) (string, error) {
 	unlock, err := a.writeLock()
 	if err != nil {
@@ -396,6 +449,9 @@ func (a *App) Delete(ctx context.Context, id string) (string, error) {
 	rel, err := a.Resolve(id)
 	if err != nil {
 		return "", err
+	}
+	if n, _, err := a.Store.Read(rel); err == nil && n.Locked {
+		return "", lockedError(rel)
 	}
 	if err := a.Store.Delete(rel); err != nil {
 		return "", err
