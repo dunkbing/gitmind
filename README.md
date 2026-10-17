@@ -18,6 +18,14 @@ Claude Code / Codex ──stdio──▶ memory-go
                                  private GitHub repo
 ```
 
+## Cloud
+
+[`cloud/`](cloud/README.md) is a hosted version you can self-host on
+Cloudflare (AGPL-3.0): the same memory over a remote MCP endpoint for
+claude.ai, ChatGPT and mobile apps, a web app, chat-history import and team
+workspaces. Laptops sync with it through this CLI:
+`memory-go setup --cloud https://YOUR-DOMAIN`.
+
 ## Install
 
 ```bash

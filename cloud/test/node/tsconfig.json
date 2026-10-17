@@ -1,0 +1,13 @@
+{
+	"compilerOptions": {
+		"target": "es2024",
+		"lib": ["es2024", "dom"],
+		"module": "es2022",
+		"moduleResolution": "bundler",
+		"types": ["node"],
+		"strict": true,
+		"noEmit": true,
+		"skipLibCheck": true
+	},
+	"include": ["./**/*.ts", "../../src/repo/git.ts", "../../src/repo/memfs.ts", "../../src/engine/**/*.ts", "../../src/import.ts"]
+}

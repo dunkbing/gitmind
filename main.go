@@ -4,6 +4,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"flag"
@@ -18,6 +19,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/dunkbing/memory-go/internal/cloud"
 	"github.com/dunkbing/memory-go/internal/github"
 	"github.com/dunkbing/memory-go/internal/gitsync"
 	"github.com/dunkbing/memory-go/internal/hooks"
@@ -40,6 +42,9 @@ Commands:
                      directory to your notes repo, creating it if missing
                        --repo NAME     NAME or OWNER/NAME (default memory-notes)
                        --public        create it public (default private)
+                       --cloud URL     use a memory-go cloud server instead of
+                                       GitHub (signs in through your browser)
+                       --workspace S   cloud workspace (default: personal)
   auth login|status|logout
                      manage the GitHub login (opens your browser)
   serve              run the MCP server on stdio (default)
@@ -92,7 +97,7 @@ func main() {
 	case "credential":
 		// git credential helper protocol; see credentialHelperConfig.
 		if len(args) > 0 {
-			err = github.CredentialHelper(args[0], os.Stdin, os.Stdout)
+			err = credentialHelper(ctx, args[0])
 		}
 	case "init":
 		err = initRepo(ctx, *dir, args)
@@ -255,6 +260,25 @@ func hookInput() []byte {
 	case <-time.After(2 * time.Second):
 		return nil
 	}
+}
+
+// credentialHelper answers git's credential requests: the cloud workspace's
+// repository first, then github.com.
+func credentialHelper(ctx context.Context, op string) error {
+	data, err := io.ReadAll(io.LimitReader(os.Stdin, 1<<16))
+	if err != nil || op != "get" {
+		return err
+	}
+	attrs := map[string]string{}
+	for _, line := range strings.Split(string(data), "\n") {
+		if k, v, ok := strings.Cut(strings.TrimSpace(line), "="); ok {
+			attrs[k] = v
+		}
+	}
+	if answered, err := cloud.CredentialHelper(ctx, attrs, os.Stdout); answered || err != nil {
+		return err
+	}
+	return github.CredentialHelper(op, bytes.NewReader(data), os.Stdout)
 }
 
 func initRepo(ctx context.Context, dir string, args []string) error {

@@ -1,0 +1,31 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "memory-go-cloud",
+	"main": "src/index.ts",
+	"compatibility_date": "2026-10-01",
+	// global_fetch_strictly_public: required to fetch MCP clients' metadata
+	// documents (CIMD) safely.
+	"compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+	"observability": { "enabled": true },
+
+	"vars": {
+		// The public URL of this deployment, without a trailing slash. MCP
+		// clients connect to PUBLIC_URL/mcp.
+		"PUBLIC_URL": "https://memory.dunkbing.dev",
+		// GitHub OAuth App for signing in (its secret: `wrangler secret put GITHUB_CLIENT_SECRET`).
+		"GITHUB_CLIENT_ID": "REPLACE_WITH_GITHUB_CLIENT_ID"
+	},
+
+	"durable_objects": {
+		"bindings": [{ "name": "WORKSPACE", "class_name": "Workspace" }]
+	},
+	"migrations": [{ "tag": "v1", "new_sqlite_classes": ["Workspace"] }],
+
+	"d1_databases": [
+		{ "binding": "DB", "database_name": "memory-go", "database_id": "REPLACE_WITH_D1_ID", "migrations_dir": "migrations" }
+	],
+	"kv_namespaces": [{ "binding": "OAUTH_KV", "id": "REPLACE_WITH_KV_ID" }],
+	"artifacts": [{ "binding": "ARTIFACTS", "namespace": "memory-go" }],
+
+	"routes": [{ "pattern": "memory.dunkbing.dev", "custom_domain": true }]
+}

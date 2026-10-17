@@ -6,10 +6,12 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"strings"
 
+	"github.com/dunkbing/memory-go/internal/cloud"
 	"github.com/dunkbing/memory-go/internal/github"
 	"github.com/dunkbing/memory-go/internal/gitsync"
 	"github.com/dunkbing/memory-go/internal/memory"
@@ -104,7 +106,12 @@ func setupCmd(ctx context.Context, dir string, args []string) error {
 	fs := flag.NewFlagSet("setup", flag.ExitOnError)
 	name := fs.String("repo", "memory-notes", "notes repository: NAME under your account, or OWNER/NAME")
 	public := fs.Bool("public", false, "create the repository as public (default private)")
+	cloudURL := fs.String("cloud", "", "sync with a memory-go cloud server at this URL instead of GitHub")
+	workspace := fs.String("workspace", "", "cloud workspace to sync (default: your personal one)")
 	fs.Parse(args)
+	if *cloudURL != "" {
+		return cloudSetup(ctx, dir, *cloudURL, *workspace)
+	}
 
 	creds, err := github.LoadCredentials()
 	if err == nil {
@@ -161,27 +168,33 @@ func connectRepo(ctx context.Context, gh *github.Client, login, name string, pri
 		return repo, false, err
 	}
 
+	return repo, created, attachRepo(ctx, dir, repo.CloneURL, config)
+}
+
+// attachRepo makes dir a clone of remote, or points an existing notes
+// repository at it and merges the two, with config (a credential helper)
+// stored in the repository.
+func attachRepo(ctx context.Context, dir, remote string, config []string) error {
 	if !gitsync.IsRepo(dir) {
-		return repo, created, gitsync.Init(ctx, dir, repo.CloneURL, config...)
+		return gitsync.Init(ctx, dir, remote, config...)
 	}
-	// An existing notes repository: point it at GitHub and merge the two.
 	r := &gitsync.Repo{Dir: dir}
-	if current := r.Remote(ctx); current != "" && !sameRepoURL(current, repo.CloneURL) {
-		return repo, created, fmt.Errorf("%s already syncs with %s; use --dir to set up a different directory", dir, current)
+	if current := r.Remote(ctx); current != "" && !sameRepoURL(current, remote) {
+		return fmt.Errorf("%s already syncs with %s; use --dir to set up a different directory", dir, current)
 	}
-	if err := r.SetRemote(ctx, repo.CloneURL); err != nil {
-		return repo, created, err
+	if err := r.SetRemote(ctx, remote); err != nil {
+		return err
 	}
 	if err := gitsync.Configure(ctx, dir, config...); err != nil {
-		return repo, created, err
+		return err
 	}
 	app, err := memory.Open(dir, log.Default())
 	if err != nil {
-		return repo, created, err
+		return err
 	}
 	defer app.Close()
 	_, err = app.Sync(ctx)
-	return repo, created, err
+	return err
 }
 
 // credentialHelperConfig makes git ask memory-go for github.com credentials
@@ -207,4 +220,94 @@ func visibility(private bool) string {
 		return "private"
 	}
 	return "public"
+}
+
+// cloudSetup signs in to a memory-go cloud server and makes dir a synced
+// clone of one of its workspaces. Git authenticates through memory-go, which
+// fetches short-lived tokens from the server.
+func cloudSetup(ctx context.Context, dir, base, slug string) error {
+	base = strings.TrimRight(base, "/")
+	creds, err := cloud.Load()
+	if err == nil && creds.URL == base {
+		err = creds.Fresh(ctx)
+	} else if err == nil {
+		err = errors.New("different server")
+	}
+	if err != nil {
+		if creds, err = cloudLogin(ctx, base); err != nil {
+			return err
+		}
+	}
+	me, err := creds.Me(ctx)
+	if err != nil {
+		return err
+	}
+	var ws *cloud.Workspace
+	for i, w := range me.Workspaces {
+		if (slug == "" && w.Kind == "personal") || strings.EqualFold(w.Slug, slug) {
+			ws = &me.Workspaces[i]
+			break
+		}
+	}
+	if ws == nil {
+		var names []string
+		for _, w := range me.Workspaces {
+			names = append(names, w.Slug)
+		}
+		return fmt.Errorf("no workspace %q; yours are: %s", slug, strings.Join(names, ", "))
+	}
+	g, err := creds.GitCredentials(ctx, ws.Slug)
+	if err != nil {
+		return err
+	}
+	creds.Login, creds.Workspace, creds.GitURL = me.Login, ws.Slug, g.URL
+	if err := creds.Save(); err != nil {
+		return err
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	// The notes repository talks only to the cloud, so a repository-wide
+	// helper is enough; the empty value clears global helpers first.
+	config := []string{"credential.helper=", "credential.helper=!'" + strings.ReplaceAll(exe, "'", `'\''`) + "' credential"}
+	if err := attachRepo(ctx, dir, g.URL, config); err != nil {
+		return err
+	}
+	fmt.Printf("✓ Connected to workspace %s (%s) on %s as %s\n", ws.Slug, ws.Name, base, me.Login)
+	fmt.Printf("✓ Notes are in %s and sync with the cloud automatically.\n", dir)
+	fmt.Println("\nAI apps that can't run memory-go locally (claude.ai, ChatGPT, mobile) can use the same memory at:")
+	fmt.Printf("  %s/mcp\n", base)
+	return nil
+}
+
+func cloudLogin(ctx context.Context, base string) (*cloud.Credentials, error) {
+	interactive := github.CanOpenBrowser()
+	open := func(u string) {
+		if interactive {
+			fmt.Println("Opening your browser to sign in to", base)
+			if github.OpenBrowser(u) == nil {
+				return
+			}
+		}
+		fmt.Printf("Open this link in a browser and approve memory-go:\n\n  %s\n\n", u)
+		fmt.Println("If the browser then fails to load a 127.0.0.1 page (e.g. over SSH), copy that page's full address and paste it here.")
+	}
+	var prompt *os.File
+	if !interactive {
+		prompt = os.Stdin
+	}
+	c, err := cloud.Login(ctx, base, open, readerOrNil(prompt))
+	if err != nil {
+		return nil, err
+	}
+	fmt.Println("✓ Signed in to", base)
+	return c, nil
+}
+
+func readerOrNil(f *os.File) io.Reader {
+	if f == nil {
+		return nil
+	}
+	return f
 }
