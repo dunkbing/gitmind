@@ -296,6 +296,34 @@ func (s Store) Delete(rel string) error {
 	return nil
 }
 
+// Rename moves a note file without changing its content, refusing to
+// overwrite an existing note.
+func (s Store) Rename(from, to string) error {
+	src, err := s.abs(from)
+	if err != nil {
+		return err
+	}
+	dst, err := s.abs(to)
+	if err != nil {
+		return err
+	}
+	if _, err := os.Stat(dst); err == nil {
+		return fmt.Errorf("%s already exists", to)
+	}
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return err
+	}
+	if err := os.Rename(src, dst); err != nil {
+		return err
+	}
+	for dir := filepath.Dir(src); dir != filepath.Clean(s.Root); dir = filepath.Dir(dir) {
+		if os.Remove(dir) != nil {
+			break
+		}
+	}
+	return nil
+}
+
 // Walk calls fn for every .md file, skipping hidden files and directories.
 func (s Store) Walk(fn func(rel string, mod time.Time) error) error {
 	return filepath.WalkDir(s.Root, func(p string, d fs.DirEntry, err error) error {
@@ -457,8 +485,7 @@ func unfencedLines(body string) []string {
 	var lines []string
 	fenced := false
 	for _, line := range strings.Split(body, "\n") {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "```") || strings.HasPrefix(trimmed, "~~~") {
+		if isFence(line) {
 			fenced = !fenced
 			continue
 		}
@@ -467,4 +494,101 @@ func unfencedLines(body string) []string {
 		}
 	}
 	return lines
+}
+
+// RewriteLinks replaces the target of every [[link]] outside code fences for
+// which repl returns ok, keeping any #heading and |alias. It returns the new
+// body and how many links changed.
+func RewriteLinks(body string, repl func(target string) (string, bool)) (string, int) {
+	lines := strings.Split(body, "\n")
+	count := 0
+	fenced := false
+	for i, line := range lines {
+		if isFence(line) {
+			fenced = !fenced
+			continue
+		}
+		if fenced {
+			continue
+		}
+		var b strings.Builder
+		last := 0
+		for _, m := range linkRe.FindAllStringSubmatchIndex(line, -1) {
+			if r, ok := repl(strings.TrimSpace(line[m[2]:m[3]])); ok {
+				b.WriteString(line[last:m[2]])
+				b.WriteString(r)
+				last = m[3]
+				count++
+			}
+		}
+		if last > 0 {
+			b.WriteString(line[last:])
+			lines[i] = b.String()
+		}
+	}
+	return strings.Join(lines, "\n"), count
+}
+
+var headingRe = regexp.MustCompile(`^(#{1,6})\s+(.+?)(?:\s+#+)?\s*$`)
+
+// ReplaceSection replaces what's under the heading named section (any level,
+// ignoring case and leading #s) up to the next heading of the same or a
+// higher level, so subsections are replaced too. When no heading matches, it
+// appends a new "## section" at the end and reports added.
+func ReplaceSection(body, section, content string) (string, bool, error) {
+	want := strings.ToLower(strings.TrimSpace(strings.TrimLeft(strings.TrimSpace(section), "#")))
+	if want == "" {
+		return "", false, errors.New("section heading is required")
+	}
+	content = strings.Trim(content, "\n")
+	lines := strings.Split(strings.TrimRight(body, "\n"), "\n")
+
+	type heading struct{ line, level int }
+	var headings, matches []heading
+	fenced := false
+	for i, line := range lines {
+		if isFence(line) {
+			fenced = !fenced
+			continue
+		}
+		if m := headingRe.FindStringSubmatch(line); m != nil && !fenced {
+			h := heading{i, len(m[1])}
+			headings = append(headings, h)
+			if strings.ToLower(m[2]) == want {
+				matches = append(matches, h)
+			}
+		}
+	}
+	switch len(matches) {
+	case 0:
+		added := strings.TrimRight(body, "\n") + "\n\n## " + strings.TrimSpace(section) + "\n\n" + content + "\n"
+		return strings.TrimLeft(added, "\n"), true, nil
+	case 1:
+	default:
+		return "", false, fmt.Errorf("%d headings are named %q; make them unique first", len(matches), section)
+	}
+
+	start := matches[0]
+	end := len(lines)
+	for _, h := range headings {
+		if h.line > start.line && h.level <= start.level {
+			end = h.line
+			break
+		}
+	}
+	out := append([]string{}, lines[:start.line+1]...)
+	out = append(out, "")
+	if content != "" {
+		out = append(out, content)
+	}
+	if end < len(lines) {
+		out = append(out, "")
+		out = append(out, lines[end:]...)
+	}
+	return strings.Join(out, "\n") + "\n", false, nil
+}
+
+func isFence(line string) bool {
+	t := strings.TrimSpace(line)
+	return strings.HasPrefix(t, "```") || strings.HasPrefix(t, "~~~")
 }

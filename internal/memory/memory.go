@@ -211,45 +211,180 @@ func (a *App) Write(ctx context.Context, title, dir, content string, tags []stri
 	return n.Path, created, a.save(ctx, n, verb)
 }
 
-// Edit appends to, prepends to, or find-and-replaces within a note's body.
-func (a *App) Edit(ctx context.Context, id, op, content, find string, expected int) (string, error) {
+// EditOp is a change to a note's body.
+type EditOp struct {
+	Operation            string // append, prepend, find_replace or replace_section
+	Content              string
+	FindText             string // find_replace: the text to replace
+	ExpectedReplacements int    // find_replace: fail unless FindText occurs this often
+	Section              string // replace_section: the heading whose content is replaced
+}
+
+type EditResult struct {
+	Path         string
+	AddedSection bool // replace_section found no such heading and added it
+}
+
+func (a *App) Edit(ctx context.Context, id string, op EditOp) (EditResult, error) {
 	unlock, err := a.writeLock()
 	if err != nil {
-		return "", err
+		return EditResult{}, err
 	}
 	defer unlock()
 	rel, err := a.Resolve(id)
 	if err != nil {
-		return "", err
+		return EditResult{}, err
 	}
 	n, _, err := a.Store.Read(rel)
 	if err != nil {
-		return "", err
+		return EditResult{}, err
 	}
-	if err := checkSecrets(content); err != nil {
-		return "", err
+	if err := checkSecrets(op.Content, op.Section); err != nil {
+		return EditResult{}, err
 	}
-	switch op {
+	res := EditResult{Path: rel}
+	switch op.Operation {
 	case "append":
-		n.Body = strings.TrimRight(n.Body, "\n") + separator(n.Body, content) + strings.TrimLeft(content, "\n")
+		n.Body = strings.TrimRight(n.Body, "\n") + separator(n.Body, op.Content) + strings.TrimLeft(op.Content, "\n")
 	case "prepend":
-		n.Body = strings.TrimRight(content, "\n") + "\n\n" + strings.TrimLeft(n.Body, "\n")
+		n.Body = strings.TrimRight(op.Content, "\n") + "\n\n" + strings.TrimLeft(n.Body, "\n")
 	case "find_replace":
-		if find == "" {
-			return "", errors.New("find_text is required for find_replace")
+		if op.FindText == "" {
+			return res, errors.New("find_text is required for find_replace")
 		}
-		count := strings.Count(n.Body, find)
+		count := strings.Count(n.Body, op.FindText)
 		if count == 0 {
-			return "", fmt.Errorf("find_text not found in %s", rel)
+			return res, fmt.Errorf("find_text not found in %s", rel)
 		}
-		if expected > 0 && count != expected {
-			return "", fmt.Errorf("find_text occurs %d times in %s, expected %d", count, rel, expected)
+		if op.ExpectedReplacements > 0 && count != op.ExpectedReplacements {
+			return res, fmt.Errorf("find_text occurs %d times in %s, expected %d", count, rel, op.ExpectedReplacements)
 		}
-		n.Body = strings.ReplaceAll(n.Body, find, content)
+		n.Body = strings.ReplaceAll(n.Body, op.FindText, op.Content)
+	case "replace_section":
+		if n.Body, res.AddedSection, err = notes.ReplaceSection(n.Body, op.Section, op.Content); err != nil {
+			return res, fmt.Errorf("%s: %w", rel, err)
+		}
 	default:
-		return "", fmt.Errorf("unknown operation %q (use append, prepend or find_replace)", op)
+		return res, fmt.Errorf("unknown operation %q (use append, prepend, find_replace or replace_section)", op.Operation)
 	}
-	return rel, a.save(ctx, n, "edit")
+	return res, a.save(ctx, n, "edit")
+}
+
+// Move gives a note a new directory (nil keeps the current one) and/or
+// title ("" keeps it). The file is first renamed in a commit of its own, with
+// its content untouched, so git always records a rename and the note's
+// history follows it; a second commit updates the title and links. Links to
+// the note keep working: links by title only need rewriting when the title
+// changes, and links by path are pointed at the new path. It returns the new
+// path and the other notes whose links were updated.
+func (a *App) Move(ctx context.Context, id string, dir *string, title string) (string, []string, error) {
+	unlock, err := a.writeLock()
+	if err != nil {
+		return "", nil, err
+	}
+	defer unlock()
+	from, err := a.Resolve(id)
+	if err != nil {
+		return "", nil, err
+	}
+	n, _, err := a.Store.Read(from)
+	if err != nil {
+		return "", nil, err
+	}
+
+	d := path.Dir(from)
+	if d == "." {
+		d = ""
+	}
+	if dir != nil {
+		if d, err = notes.CleanDir(*dir); err != nil {
+			return "", nil, err
+		}
+	}
+	oldTitle := n.Title
+	if title = norm.NFC.String(strings.TrimSpace(title)); title == "" {
+		title = oldTitle
+	}
+	if err := checkSecrets(title); err != nil {
+		return "", nil, err
+	}
+	to := path.Join(d, notes.Slugify(title)+".md")
+	if to == from && title == oldTitle {
+		return "", nil, fmt.Errorf("%s already has that directory and title", from)
+	}
+	if to != from && a.Store.Exists(to) {
+		return "", nil, fmt.Errorf("can't move to %s: a note already exists there", to)
+	}
+	sources, err := a.Index.Backlinks(from)
+	if err != nil {
+		return "", nil, err
+	}
+
+	oldFileSlug := notes.Slugify(strings.TrimSuffix(path.Base(from), ".md"))
+	oldTitleSlug := notes.Slugify(oldTitle)
+	titleChanged := notes.Slugify(title) != oldTitleSlug || notes.Slugify(title) != oldFileSlug
+	newTarget := func(target string) (string, bool) {
+		targetPath, slug := notes.LinkTarget(target)
+		if targetPath != "" {
+			return notes.Permalink(to), targetPath == from && target != notes.Permalink(to)
+		}
+		return title, titleChanged && (slug == oldFileSlug || slug == oldTitleSlug) && target != title
+	}
+
+	if to != from {
+		if err := a.Store.Rename(from, to); err != nil {
+			return "", nil, err
+		}
+		if err := a.Index.Remove(from); err != nil {
+			return "", nil, err
+		}
+		if _, err := a.Repo.Commit(ctx, a.message("move", from+" -> "+to), from, to); err != nil {
+			return "", nil, fmt.Errorf("moved %s to %s but git commit failed: %w", from, to, err)
+		}
+	}
+
+	n.Path, n.Title = to, title
+	n.Body, _ = notes.RewriteLinks(n.Body, newTarget) // self-links
+	for i, line := range n.Extra {
+		if strings.HasPrefix(line, "permalink:") {
+			n.Extra[i] = "permalink: " + notes.Permalink(to)
+		}
+	}
+	mod, err := a.Store.Write(n)
+	if err != nil {
+		return "", nil, err
+	}
+	now := time.Now()
+	if err := a.Index.Upsert(n, mod, now); err != nil {
+		return "", nil, err
+	}
+
+	var updated []string
+	for _, src := range sources {
+		s, _, err := a.Store.Read(src.Path)
+		if err != nil {
+			return "", nil, err
+		}
+		body, changes := notes.RewriteLinks(s.Body, newTarget)
+		if changes == 0 {
+			continue
+		}
+		s.Body = body
+		mod, err := a.Store.Write(s)
+		if err != nil {
+			return "", nil, err
+		}
+		if err := a.Index.Upsert(s, mod, now); err != nil {
+			return "", nil, err
+		}
+		updated = append(updated, s.Path)
+	}
+
+	if _, err := a.Repo.Commit(ctx, a.message("relink", to), append([]string{to}, updated...)...); err != nil {
+		return "", nil, fmt.Errorf("moved %s to %s but git commit of the link updates failed: %w", from, to, err)
+	}
+	a.schedulePush()
+	return to, updated, nil
 }
 
 func (a *App) Delete(ctx context.Context, id string) (string, error) {

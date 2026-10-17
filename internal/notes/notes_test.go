@@ -2,6 +2,7 @@ package notes
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -124,5 +125,52 @@ func TestObservationsAndInlineTags(t *testing.T) {
 	wantTags := []string{"auth", "security", "chore", "prose-tag"}
 	if got := InlineTags(body); !reflect.DeepEqual(got, wantTags) {
 		t.Errorf("InlineTags = %q, want %q", got, wantTags)
+	}
+}
+
+func TestRewriteLinks(t *testing.T) {
+	body := "- depends on [[Auth service]] and [[Auth service#Tokens|tokens]]\n" +
+		"- path form [[myapp/auth-service]], other [[Billing]]\n" +
+		"```\n[[Auth service]] in code\n```\n"
+	got, n := RewriteLinks(body, func(target string) (string, bool) {
+		switch target {
+		case "Auth service":
+			return "Identity service", true
+		case "myapp/auth-service":
+			return "platform/identity-service", true
+		}
+		return "", false
+	})
+	want := "- depends on [[Identity service]] and [[Identity service#Tokens|tokens]]\n" +
+		"- path form [[platform/identity-service]], other [[Billing]]\n" +
+		"```\n[[Auth service]] in code\n```\n"
+	if got != want || n != 3 {
+		t.Errorf("RewriteLinks = %d changes:\n%s", n, got)
+	}
+}
+
+func TestReplaceSection(t *testing.T) {
+	body := "Intro line.\n\n## Setup ##\n\nold setup\n\n### Details\n\nold details\n\n## Usage\n\nkeep me\n\n```\n## Setup\n```\n"
+	got, added, err := ReplaceSection(body, "setup", "- [setup] new setup")
+	if err != nil || added {
+		t.Fatalf("ReplaceSection: added=%v err=%v", added, err)
+	}
+	want := "Intro line.\n\n## Setup ##\n\n- [setup] new setup\n\n## Usage\n\nkeep me\n\n```\n## Setup\n```\n"
+	if got != want {
+		t.Errorf("replace middle section:\n%q\nwant\n%q", got, want)
+	}
+
+	got, _, _ = ReplaceSection(body, "## Usage", "replaced usage")
+	if !strings.HasSuffix(got, "## Usage\n\nreplaced usage\n") || !strings.Contains(got, "old details") {
+		t.Errorf("replace last section:\n%s", got)
+	}
+
+	got, added, _ = ReplaceSection("Just text\n", "Open questions", "- why?")
+	if !added || got != "Just text\n\n## Open questions\n\n- why?\n" {
+		t.Errorf("add missing section: added=%v\n%q", added, got)
+	}
+
+	if _, _, err := ReplaceSection("## A\nx\n## A\ny\n", "A", "z"); err == nil {
+		t.Error("ambiguous heading accepted")
 	}
 }

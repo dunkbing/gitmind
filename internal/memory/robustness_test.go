@@ -86,7 +86,7 @@ func TestConcurrentEditsKeepEveryChange(t *testing.T) {
 			if i%2 == 1 {
 				app = b
 			}
-			_, err := app.Edit(ctx, "Log", "append", fmt.Sprintf("- item %02d", i), "", 0)
+			_, err := app.Edit(ctx, "Log", EditOp{Operation: "append", Content: fmt.Sprintf("- item %02d", i)})
 			errs <- err
 		}()
 	}
@@ -126,7 +126,7 @@ func TestModifyDeleteConflictKeepsTheNote(t *testing.T) {
 		t.Fatal(err)
 	}
 	mustSync(t, laptop)
-	if _, err := desktop.Edit(ctx, "Runbook", "append", "- [setup] step two", "", 0); err != nil {
+	if _, err := desktop.Edit(ctx, "Runbook", EditOp{Operation: "append", Content: "- [setup] step two"}); err != nil {
 		t.Fatal(err)
 	}
 	res := mustSync(t, desktop)

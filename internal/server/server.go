@@ -42,10 +42,17 @@ type writeArgs struct {
 
 type editArgs struct {
 	Identifier           string `json:"identifier" jsonschema:"note path, permalink or exact title"`
-	Operation            string `json:"operation" jsonschema:"append, prepend or find_replace"`
-	Content              string `json:"content" jsonschema:"text to add, or the replacement text for find_replace"`
+	Operation            string `json:"operation" jsonschema:"append, prepend, find_replace or replace_section"`
+	Content              string `json:"content" jsonschema:"text to add; the replacement text for find_replace; the new content under the heading for replace_section"`
 	FindText             string `json:"find_text,omitempty" jsonschema:"text to replace (find_replace only)"`
 	ExpectedReplacements int    `json:"expected_replacements,omitempty" jsonschema:"fail unless find_text occurs exactly this many times"`
+	Section              string `json:"section,omitempty" jsonschema:"heading text whose content to replace (replace_section only); its subsections are replaced too"`
+}
+
+type moveArgs struct {
+	Identifier string  `json:"identifier" jsonschema:"note path, permalink or exact title"`
+	Directory  *string `json:"directory,omitempty" jsonschema:"new directory; omit to keep the current one, \"\" for the top level"`
+	Title      string  `json:"title,omitempty" jsonschema:"new title, which also renames the file; omit to keep it"`
 }
 
 type contextArgs struct {
@@ -158,14 +165,40 @@ func New(app *memory.App, version string) *mcp.Server {
 	})
 
 	mcp.AddTool(s, &mcp.Tool{
-		Name:        "edit_note",
-		Description: "Edit a memory note in place: append, prepend, or find_replace text in its body.",
+		Name: "edit_note",
+		Description: "Edit a memory note in place: append, prepend, find_replace text, or replace_section to rewrite " +
+			"everything under one heading (added at the end if the heading doesn't exist).",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in editArgs) (*mcp.CallToolResult, any, error) {
-		rel, err := app.Edit(ctx, in.Identifier, in.Operation, in.Content, in.FindText, in.ExpectedReplacements)
+		res, err := app.Edit(ctx, in.Identifier, memory.EditOp{
+			Operation: in.Operation, Content: in.Content, FindText: in.FindText,
+			ExpectedReplacements: in.ExpectedReplacements, Section: in.Section,
+		})
 		if err != nil {
 			return nil, nil, err
 		}
-		return text("Edited " + rel), nil, nil
+		if res.AddedSection {
+			return text(fmt.Sprintf("Edited %s: no section %q existed, so it was added at the end", res.Path, in.Section)), nil, nil
+		}
+		return text("Edited " + res.Path), nil, nil
+	})
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name: "move_note",
+		Description: "Move a note to another directory and/or give it a new title (which renames the file). " +
+			"Links to it in other notes are updated so they keep working.",
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, in moveArgs) (*mcp.CallToolResult, any, error) {
+		if in.Directory == nil && strings.TrimSpace(in.Title) == "" {
+			return nil, nil, fmt.Errorf("give a new directory, a new title, or both")
+		}
+		to, updated, err := app.Move(ctx, in.Identifier, in.Directory, in.Title)
+		if err != nil {
+			return nil, nil, err
+		}
+		msg := "Moved to " + to
+		if len(updated) > 0 {
+			msg += "; updated links in " + strings.Join(updated, ", ")
+		}
+		return text(msg), nil, nil
 	})
 
 	mcp.AddTool(s, &mcp.Tool{

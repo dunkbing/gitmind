@@ -28,7 +28,8 @@ for context that outlives a single session.
 
 **How to write notes**
 - Update an existing note with `edit_note` rather than creating a near-duplicate; search
-  first.
+  first. For notes organized under headings, `replace_section` rewrites one section cleanly.
+- Reorganize with `move_note` (it keeps links working), not by deleting and rewriting.
 - One topic per note. Use a clear title and put it in a directory named after the
   project's git repository (e.g. `myapp/`); use `general/` for cross-project preferences.
 - Write observations as `- [category] fact #tag` (categories such as decision,

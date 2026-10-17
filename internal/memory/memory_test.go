@@ -70,10 +70,10 @@ func TestWriteSearchEditDelete(t *testing.T) {
 		}
 	}
 
-	if _, err := a.Edit(ctx, "Deploy checklist", "append", "- [setup] deploys run from CI only", "", 0); err != nil {
+	if _, err := a.Edit(ctx, "Deploy checklist", EditOp{Operation: "append", Content: "- [setup] deploys run from CI only"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := a.Edit(ctx, rel, "find_replace", "staging", "missing text", 0); err == nil {
+	if _, err := a.Edit(ctx, rel, EditOp{Operation: "find_replace", Content: "staging", FindText: "missing text"}); err == nil {
 		t.Fatal("find_replace of missing text succeeded")
 	}
 	n, _, _ := a.Store.Read(rel)
@@ -124,10 +124,10 @@ func TestSyncBetweenMachines(t *testing.T) {
 
 	// Both machines append to the same note before syncing: the union merge
 	// must keep both lines without conflict markers.
-	if _, err := laptop.Edit(ctx, "Preferences", "append", "- [preference] tabs in Go, spaces elsewhere", "", 0); err != nil {
+	if _, err := laptop.Edit(ctx, "Preferences", EditOp{Operation: "append", Content: "- [preference] tabs in Go, spaces elsewhere"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := desktop.Edit(ctx, "Preferences", "append", "- [preference] conventional commits", "", 0); err != nil {
+	if _, err := desktop.Edit(ctx, "Preferences", EditOp{Operation: "append", Content: "- [preference] conventional commits"}); err != nil {
 		t.Fatal(err)
 	}
 	mustSync(t, laptop)

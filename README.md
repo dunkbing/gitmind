@@ -78,7 +78,8 @@ fit are listed by title. Agents without hooks (e.g. Codex) can call the
 | `build_context` | A note plus the notes it links to and from, and links to notes not written yet (`depth: 2` goes one step further) |
 | `project_context` | A project's notes, general notes and recent activity, for the start of a session |
 | `write_note` | Create a note; replacing an existing one needs `overwrite: true` |
-| `edit_note` | `append`, `prepend` or `find_replace` inside a note |
+| `edit_note` | `append`, `prepend`, `find_replace`, or `replace_section` (everything under a heading, added if missing) |
+| `move_note` | New directory and/or title; links to the note are updated, and git history follows the rename |
 | `delete_note` | Delete a note (git history keeps it) |
 | `recent_activity` | Most recently changed notes |
 | `list_notes` | List notes, optionally under one directory |
