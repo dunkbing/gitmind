@@ -1,0 +1,56 @@
+/* Styles for the app pages the Worker renders (cloud/src/web). Built by the
+   Tailwind CLI into public/app.css; classes are picked up from the Worker's
+   source. */
+@import "tailwindcss" source(none);
+@source "../../../src/web";
+@import "./tokens.css";
+
+@layer components {
+	.btn { @apply inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-md border border-transparent bg-accent px-3 py-1.5 text-[14px] text-accent-ink no-underline transition hover:opacity-90; }
+	.btn.plain, button.plain { @apply border-line bg-transparent text-ink hover:bg-surface; }
+	button.danger { @apply bg-danger text-white; }
+	button { @apply inline-flex cursor-pointer items-center rounded-md border border-transparent bg-accent px-3 py-1.5 text-[14px] text-accent-ink hover:opacity-90; }
+	input[type="text"], input[type="search"], select, textarea { @apply rounded-md border border-line bg-surface px-2.5 py-1.5 text-[14px] text-ink outline-none focus:border-accent; }
+	textarea { @apply min-h-[55vh] w-full font-mono text-[13px] leading-relaxed; }
+	h1 { @apply text-[30px]; }
+	h2 { @apply mt-8 text-[20px]; }
+	h3 { @apply mt-6 text-[16px]; }
+	.muted { @apply text-[13px] text-muted; }
+	.flash { @apply mb-5 rounded-lg border border-line bg-accent-soft px-3.5 py-2.5 text-[14px]; }
+	.flash.error { @apply border-danger/40 bg-transparent text-danger; }
+	.card { @apply rounded-xl border border-line bg-surface p-5; }
+	.hero { @apply mx-auto mt-[8vh] max-w-[620px]; }
+	.hero h1 { @apply mb-3 text-[30px]; }
+	.cols { @apply grid gap-10 lg:grid-cols-[minmax(0,1fr)_260px]; }
+	.row { @apply flex flex-wrap items-center gap-2; }
+	form.inline { @apply inline; }
+	.hits { @apply m-0 list-none p-0; }
+	.hits > li { @apply border-b border-line py-3; }
+	.hits li ul { @apply mt-1 list-disc pl-5 text-[14px]; }
+	.hits .meta { @apply text-[13px] text-muted; }
+	.hits .snip { @apply mt-1 text-[14px] break-words; }
+	.hits mark { @apply rounded bg-accent-soft px-0.5 text-ink; }
+	.tag { @apply rounded bg-accent-soft px-1.5 text-[12.5px] text-accent no-underline; }
+	.cat { @apply mr-1 rounded bg-accent-soft px-1.5 py-px font-mono text-[11.5px] lowercase text-accent; }
+	.badge { @apply ml-2 rounded-full border border-line px-2 align-middle font-sans text-[11.5px] text-muted; }
+	.note .body { @apply mt-6 break-words; }
+	.note .body p, .note .body ul, .note .body ol, .note .body pre, .note .body blockquote { @apply my-3; }
+	.note .body ul { @apply list-disc pl-5; }
+	.note .body ol { @apply list-decimal pl-5; }
+	.note .body pre { @apply overflow-x-auto rounded-lg border border-line bg-surface p-3 text-[13px]; }
+	.note .body code { @apply rounded bg-accent-soft px-1 text-[13px]; }
+	.note .body pre code { @apply bg-transparent p-0; }
+	.note .body hr { @apply my-6 border-line; }
+	.wiki { @apply border-b border-dashed border-accent no-underline; }
+	.wiki.missing { @apply border-danger text-danger; }
+	blockquote { @apply border-l-2 border-line pl-3 text-muted; }
+	.side h3 { @apply mt-6 mb-2 font-sans text-[11px] uppercase tracking-[0.08em] text-muted; }
+	.side ul { @apply list-disc pl-5 text-[14px]; }
+	details summary { @apply mt-4 mb-1 cursor-pointer text-[13px] text-muted; }
+	table { @apply w-full border-collapse text-[14px]; }
+	td, th { @apply border-b border-line px-2 py-2 text-left align-top; }
+	th { @apply font-normal text-muted; }
+	.wrap { @apply overflow-x-auto; }
+	pre.box { @apply overflow-x-auto rounded-lg border border-line bg-surface p-3 font-mono text-[13px]; }
+	code { @apply font-mono; }
+}

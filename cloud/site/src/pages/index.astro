@@ -1,0 +1,69 @@
+---
+import Base from "../layouts/Base.astro";
+
+const description =
+	"gitmind gives Claude, ChatGPT, Claude Code and Codex one shared memory: Markdown notes in a git repository you own, served to every AI app over MCP.";
+const jsonLd = {
+	"@context": "https://schema.org",
+	"@type": "SoftwareApplication",
+	name: "gitmind",
+	applicationCategory: "DeveloperApplication",
+	operatingSystem: "Web, macOS, Linux",
+	description,
+	url: "https://gitmind.app/",
+	license: "https://www.gnu.org/licenses/agpl-3.0.html",
+	codeRepository: "https://github.com/dunkbing/gitmind",
+	offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
+};
+const features = [
+	["Works in every AI app", "One MCP endpoint for claude.ai on web, desktop and mobile, ChatGPT, Claude Code and Codex. Your agents remember the same things everywhere."],
+	["Your memory is a git repo", "Every note is Markdown, every change is a commit. Clone it, read it in Obsidian, review its history, take it with you."],
+	["Agents that save the right things", "Decisions, preferences, gotchas and setup knowledge, written as short facts with links between them, with a nudge to save and a duplicate check."],
+	["Shared with your team", "Team workspaces share a memory between people and their agents, with invite links and roles."],
+	["Bring your history", "Import Claude and ChatGPT exports, or a folder of Markdown notes, and start from what you already know."],
+	["Open source", "AGPL-3.0. Use gitmind.app, or self-host it on your own Cloudflare account in a few minutes."],
+];
+---
+<Base title="gitmind" description={description} jsonLd={jsonLd}>
+	<section class="pt-4 md:pt-10">
+		<p class="mb-5 text-[13px] uppercase tracking-[0.1em] text-muted">Memory for AI agents</p>
+		<h1 class="text-[40px] leading-[1.1] md:text-[52px]">One memory for every AI you work with.</h1>
+		<p class="mt-6 max-w-[580px] text-[17px] text-muted">
+			gitmind keeps what your agents learn (decisions, preferences, gotchas, how things are set up) as notes in a git repository you own,
+			and gives every AI app the same memory: Claude, ChatGPT, Claude Code and Codex.
+		</p>
+		<div class="mt-8 flex flex-wrap gap-3">
+			<a href="/app" class="rounded-md bg-accent px-4 py-2.5 text-accent-ink no-underline hover:opacity-90">Start with GitHub</a>
+			<a href="/docs/quickstart/" class="rounded-md border border-line px-4 py-2.5 text-ink no-underline hover:bg-surface">Read the quickstart</a>
+		</div>
+	</section>
+
+	<section class="mt-16 rounded-xl border border-line bg-surface p-5 font-mono text-[13px] leading-relaxed md:p-6">
+		<p class="text-muted"># claude.ai, ChatGPT: add a connector with this URL</p>
+		<p>https://gitmind.app/mcp</p>
+		<p class="mt-4 text-muted"># Claude Code</p>
+		<p>claude mcp add --transport http gitmind https://gitmind.app/mcp</p>
+		<p class="mt-4 text-muted"># or keep a synced clone on your laptop</p>
+		<p>go install github.com/dunkbing/gitmind@latest</p>
+		<p>gitmind setup --cloud https://gitmind.app</p>
+	</section>
+
+	<section class="mt-16 grid gap-x-10 gap-y-8 md:grid-cols-2">
+		{features.map(([title, body]) => (
+			<div>
+				<h2 class="text-[19px]">{title}</h2>
+				<p class="mt-2 text-muted">{body}</p>
+			</div>
+		))}
+	</section>
+
+	<section class="mt-16">
+		<h2 class="text-[26px]">How it works</h2>
+		<ol class="mt-5 space-y-4 text-muted">
+			<li><strong class="text-ink">Connect.</strong> Sign in with GitHub and add gitmind to your AI apps. Each one signs in to your memory once.</li>
+			<li><strong class="text-ink">Work as usual.</strong> At the start of a session the agent loads what's relevant: pinned notes and an index of the project's notes. It searches when it needs more.</li>
+			<li><strong class="text-ink">Keep what matters.</strong> When something is worth remembering, the agent writes it down as a short fact. Next time, in any app or on any machine, it already knows.</li>
+		</ol>
+		<p class="mt-8"><a href="/docs/how-it-works/">How gitmind works under the hood →</a></p>
+	</section>
+</Base>

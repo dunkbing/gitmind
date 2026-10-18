@@ -26,7 +26,6 @@ import {
 import { linkTarget, parse, permalink } from "../engine/notes";
 import { parseExport } from "../import";
 import { actorOf, parseWhen } from "../mcp";
-import { ICON_PNG_32, ICON_PNG_180, ICON_PNG_512, ICON_SVG } from "./icon";
 import { escape, page } from "./layout";
 import { renderMarkdown } from "./markdown";
 
@@ -76,7 +75,7 @@ const notFound = (c: C, user: User | null, message: string) => {
 
 // ---- sign-in -----------------------------------------------------------------
 
-const safeNext = (next: string | undefined) => (next && next.startsWith("/") && !next.startsWith("//") ? next : "/");
+const safeNext = (next: string | undefined) => (next && next.startsWith("/") && !next.startsWith("//") ? next : "/app");
 
 // GitHub endpoints, overridable for tests.
 const githubWeb = (env: Env) => env.GITHUB_WEB_URL ?? "https://github.com";
@@ -282,23 +281,15 @@ function authorizeError(c: C, user: User, e: unknown) {
 
 // ---- home and connect -------------------------------------------------------
 
-web.get("/", async (c) => {
-	const user = c.get("user");
-	if (user) {
-		const ws = await workspaceFor(c.env, user.id);
-		if (ws) return c.redirect(`/w/${ws.slug}`);
-	}
-	return page(
-		{ title: "Memory for your AI agents", user },
-		`<div class="hero"><h1>One memory for Claude, ChatGPT, Codex and your coding agents.</h1>
-		<p>gitmind keeps what your agents learn (decisions, preferences, gotchas, setup knowledge) as Markdown notes in a git repository you own,
-		and serves them to every AI app over MCP: claude.ai, Claude Desktop and mobile, ChatGPT, Claude Code and Codex.</p>
-		<ul><li>Search, links between notes, pinned notes, and a full history of every change.</li>
-		<li>Your laptops sync the same notes with plain git through the <a href="https://github.com/dunkbing/gitmind">gitmind CLI</a>.</li>
-		<li>Team workspaces share a memory between people and their agents.</li>
-		<li>Open source (AGPL-3.0); self-host it on your own Cloudflare account.</li></ul>
-		<p><a class="btn" href="/login">Sign in with GitHub</a></p></div>`,
-	);
+// The static site serves "/"; this only runs without built assets (tests).
+web.get("/", (c) => c.redirect("/app"));
+
+// /app opens the signed-in user's personal workspace.
+web.get("/app", async (c) => {
+	const user = requireUser(c);
+	if (user instanceof Response) return user;
+	const ws = await workspaceFor(c.env, user.id);
+	return c.redirect(ws ? `/w/${ws.slug}` : "/connect");
 });
 
 web.get("/connect", async (c) => {
@@ -360,7 +351,7 @@ web.get("/w/:slug", async (c) => {
 				groups.set(dir, [...(groups.get(dir) ?? []), n]);
 			}
 			const item = (h: (typeof notes)[0]) =>
-				`<li><a href="${noteHref(ws, h.path)}">${escape(h.title)}</a> <span class="muted">${day(h.updated)}${h.summary ? " · " + escape(h.summary.slice(0, 120)) : ""}</span></li>`;
+				`<li><a href="${noteHref(ws, h.path)}">${escape(h.title)}</a> <span class="muted">${day(h.updated)}</span>${h.summary ? `<div class="snip">${summaryHtml(h.summary)}</div>` : ""}</li>`;
 			results =
 				(pinned.length ? `<h3>Pinned</h3><ul class="hits">${pinned.map(item).join("")}</ul>` : "") +
 				[...groups]
@@ -488,6 +479,14 @@ web.post("/w/:slug/edit/*", async (c) => {
 	}
 });
 
+// summaryHtml shows a note's first line without its list marker, with an
+// observation's category as a chip.
+function summaryHtml(summary: string): string {
+	const line = summary.replace(/^\s*[-*]\s+/, "").slice(0, 160);
+	const obs = /^\[([^\][]+)\]\s+(.*)$/.exec(line);
+	return obs ? `<span class="cat">${escape(obs[1])}</span> ${escape(obs[2])}` : escape(line);
+}
+
 const notePathAction = (c: C, ws: Workspace, action: string) => decodeURIComponent(new URL(c.req.url).pathname.slice(`/w/${ws.slug}/${action}/`.length));
 
 web.post("/w/:slug/pin/*", async (c) => {
@@ -558,19 +557,27 @@ const data = await (await fetch('/w/' + slug + '/graph.json')).json();
 const cv = document.getElementById('g'), ctx = cv.getContext('2d');
 const css = getComputedStyle(document.documentElement);
 const color = (v) => css.getPropertyValue(v).trim();
-const nodes = data.nodes.map((n, i) => ({ ...n, x: Math.cos(i) * 200 * Math.random(), y: Math.sin(i) * 200 * Math.random(), vx: 0, vy: 0 }));
+const nodes = data.nodes.map((n, i) => { const a = (i / Math.max(1, data.nodes.length)) * Math.PI * 2; return { ...n, x: Math.cos(a) * 120, y: Math.sin(a) * 120, vx: 0, vy: 0 }; });
 const byPath = new Map(nodes.map((n) => [n.path, n]));
 const edges = data.edges.map((e) => [byPath.get(e.from), byPath.get(e.to)]).filter(([a, b]) => a && b);
 const degree = new Map(); for (const [a, b] of edges) { degree.set(a, (degree.get(a) || 0) + 1); degree.set(b, (degree.get(b) || 0) + 1); }
 let scale = 1, ox = 0, oy = 0, drag = null, hover = null;
-function resize() { const r = cv.getBoundingClientRect(); cv.width = r.width * devicePixelRatio; cv.height = r.height * devicePixelRatio; }
-resize(); addEventListener('resize', resize);
+// Match the drawing buffer to the canvas's on-screen size, checked every frame
+// so layout changes (fonts, the sidebar) never leave it stale.
+function resize() { const w = Math.round(cv.clientWidth * devicePixelRatio), h = Math.round(cv.clientHeight * devicePixelRatio); if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; } }
 function step() {
 	for (const a of nodes) for (const b of nodes) { if (a === b) continue; const dx = a.x - b.x, dy = a.y - b.y, d2 = dx * dx + dy * dy + 0.01; const f = 900 / d2; a.vx += dx * f; a.vy += dy * f; }
 	for (const [a, b] of edges) { const dx = b.x - a.x, dy = b.y - a.y, d = Math.sqrt(dx * dx + dy * dy) + 0.01, f = (d - 90) * 0.01; a.vx += dx / d * f * d * 0.05; a.vy += dy / d * f * d * 0.05; b.vx -= dx / d * f * d * 0.05; b.vy -= dy / d * f * d * 0.05; }
-	for (const n of nodes) { n.vx -= n.x * 0.002; n.vy -= n.y * 0.002; if (n !== drag) { n.x += n.vx * 0.5; n.y += n.vy * 0.5; } n.vx *= 0.6; n.vy *= 0.6; }
+	// A gentle pull to the middle keeps unlinked notes from drifting away.
+	for (const n of nodes) { n.vx -= n.x * 0.01; n.vy -= n.y * 0.01; if (n !== drag) { n.x += n.vx * 0.5; n.y += n.vy * 0.5; } n.vx *= 0.6; n.vy *= 0.6; }
+	// Keep the graph centered: shift everything by the centroid each frame.
+	if (nodes.length && !drag) { let cx = 0, cy = 0; for (const n of nodes) { cx += n.x; cy += n.y; } cx /= nodes.length; cy /= nodes.length; for (const n of nodes) { n.x -= cx; n.y -= cy; } }
 }
-const toScreen = (n) => [cv.width / 2 + (n.x + ox) * scale * devicePixelRatio, cv.height / 2 + (n.y + oy) * scale * devicePixelRatio];
+// Fit every note in view; the wheel zooms relative to that.
+let fit = 1;
+function fitView() { let mx = 1, my = 1; for (const n of nodes) { mx = Math.max(mx, Math.abs(n.x)); my = Math.max(my, Math.abs(n.y)); }
+	fit = Math.min(1.6, (cv.width / devicePixelRatio / 2 - 70) / mx, (cv.height / devicePixelRatio / 2 - 40) / my); }
+const toScreen = (n) => [cv.width / 2 + (n.x + ox) * scale * fit * devicePixelRatio, cv.height / 2 + (n.y + oy) * scale * fit * devicePixelRatio];
 function draw() {
 	ctx.clearRect(0, 0, cv.width, cv.height);
 	ctx.strokeStyle = color('--line'); ctx.lineWidth = devicePixelRatio;
@@ -584,10 +591,10 @@ function pick(e) { const r = cv.getBoundingClientRect(); const px = (e.clientX -
 	let best = null, bd = 400 * devicePixelRatio; for (const n of nodes) { const [x, y] = toScreen(n); const d = (x - px) ** 2 + (y - py) ** 2; if (d < bd) { bd = d; best = n; } } return best; }
 let moved = false;
 cv.addEventListener('pointerdown', (e) => { drag = pick(e); moved = false; cv.setPointerCapture(e.pointerId); });
-cv.addEventListener('pointermove', (e) => { if (drag) { moved = true; drag.x += e.movementX / scale; drag.y += e.movementY / scale; } else hover = pick(e); });
+cv.addEventListener('pointermove', (e) => { if (drag) { moved = true; drag.x += e.movementX / (scale * fit); drag.y += e.movementY / (scale * fit); } else hover = pick(e); });
 cv.addEventListener('pointerup', () => { if (drag && !moved) location.href = '/w/' + slug + '/n/' + drag.path.split('/').map(encodeURIComponent).join('/'); drag = null; });
 cv.addEventListener('wheel', (e) => { e.preventDefault(); scale *= e.deltaY < 0 ? 1.1 : 0.9; }, { passive: false });
-(function loop() { step(); draw(); requestAnimationFrame(loop); })();
+(function loop() { resize(); step(); if (!drag) fitView(); draw(); requestAnimationFrame(loop); })();
 if (!nodes.length) { ctx.fillStyle = color('--muted'); ctx.font = (14 * devicePixelRatio) + 'px system-ui'; ctx.fillText('No notes yet', cv.width / 2, cv.height / 2); }
 })();`;
 
@@ -737,14 +744,5 @@ web.post("/invite/:code", async (c) => {
 		return page({ title: "Invite", user, error: errMessage(e) }, "");
 	}
 });
-
-// ---- icons -----------------------------------------------------------------
-
-const icon = (body: string | Uint8Array, type: string) => () =>
-	new Response(body, { headers: { "Content-Type": type, "Cache-Control": "public, max-age=86400" } });
-web.get("/favicon.svg", icon(ICON_SVG, "image/svg+xml"));
-web.get("/favicon.ico", icon(ICON_PNG_32, "image/png"));
-web.get("/apple-touch-icon.png", icon(ICON_PNG_180, "image/png"));
-web.get("/icon-512.png", icon(ICON_PNG_512, "image/png"));
 
 web.notFound((c) => notFound(c, c.get("user") ?? null, "This page doesn't exist."));

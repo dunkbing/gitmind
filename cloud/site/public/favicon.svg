@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <title>gitmind</title>
+  <style>
+    .g { color: #1f6b55; }
+    @media (prefers-color-scheme: dark) { .g { color: #6cc8a5; } }
+  </style>
+  <!-- A git commit graph: the main line of memory, with a thought branching off. -->
+  <g class="g">
+    <g fill="none" stroke="currentColor" stroke-linecap="round">
+      <path d="M176 112 V346" stroke-width="44"/>
+      <path d="M176 300 C176 210 336 244 336 150" stroke-width="44"/>
+      <circle cx="176" cy="404" r="48" stroke-width="40"/>
+    </g>
+    <g fill="currentColor">
+      <circle cx="176" cy="104" r="58"/>
+      <circle cx="336" cy="134" r="58"/>
+    </g>
+  </g>
+</svg>

@@ -9,6 +9,9 @@ that your laptops' gitmind CLI syncs with.
   registration, PKCE), so it can be added as a custom connector in claude.ai
   and ChatGPT, or to Claude Code and Codex. Same tools as the CLI, plus
   `list_workspaces`.
+- **Site and docs** (`site/`, Astro + Tailwind): static pages served as
+  Worker assets, with a sitemap, structured data and `llms.txt` for search
+  engines and AI assistants.
 - **Web app**: browse, search (with tag, category and date filters), edit,
   move and pin notes; follow links and backlinks; a link graph; the change
   history; import and export.
@@ -65,7 +68,8 @@ Then sign in at your domain and follow its **Connect** page.
 ## Development
 
 ```bash
-bun install
+bun install && (cd site && bun install)
+(cd site && bun run build)   # the marketing site, docs and app.css (Astro + Tailwind)
 bun run types       # generates worker-configuration.d.ts
 bun run typecheck
 ./scripts/in-docker.sh node node_modules/vitest/vitest.mjs run   # all tests

@@ -6,6 +6,9 @@
 	// global_fetch_strictly_public: required to fetch MCP clients' metadata
 	// documents (CIMD) safely.
 	"compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+	// The marketing site and docs (site/, built with Astro). Static files are
+	// served directly; everything else (the app, OAuth, /mcp) reaches the Worker.
+	"assets": { "directory": "./site/dist" },
 	"observability": { "enabled": true },
 
 	"vars": {

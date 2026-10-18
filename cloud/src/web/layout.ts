@@ -13,79 +13,71 @@ export interface PageOptions {
 	error?: string;
 }
 
-const STYLE = `
-:root{--bg:#fbfaf8;--fg:#1d1c1a;--muted:#6b6862;--line:#e6e2db;--card:#fff;--accent:#2f6f5e;--accent-fg:#fff;--warn:#a4472e;--chip:#eef3f1;--code:#f3f1ed;color-scheme:light}
-@media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#151514;--fg:#ecebe8;--muted:#a19e97;--line:#2c2b29;--card:#1c1c1a;--accent:#7cc4ad;--accent-fg:#0e1a16;--warn:#e6896d;--chip:#1f2b27;--code:#232320;color-scheme:dark}}
-:root[data-theme=dark]{--bg:#151514;--fg:#ecebe8;--muted:#a19e97;--line:#2c2b29;--card:#1c1c1a;--accent:#7cc4ad;--accent-fg:#0e1a16;--warn:#e6896d;--chip:#1f2b27;--code:#232320;color-scheme:dark}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.55 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
-a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
-header{border-bottom:1px solid var(--line);padding:10px 20px;display:flex;gap:16px;align-items:center;flex-wrap:wrap}
-header .brand{font-weight:650;color:var(--fg)}header nav{display:flex;gap:4px;flex-wrap:wrap;flex:1}
-header nav a{padding:4px 10px;border-radius:6px;color:var(--muted)}header nav a.on{background:var(--chip);color:var(--fg)}
-header .me{display:flex;gap:8px;align-items:center;color:var(--muted);font-size:14px}header img{width:24px;height:24px;border-radius:50%}
-select,input,textarea,button{font:inherit;color:inherit}
-select,input[type=text],input[type=search],textarea{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:6px 9px}
-textarea{width:100%;min-height:55vh;font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace}
-button,.btn{background:var(--accent);color:var(--accent-fg);border:0;border-radius:6px;padding:6px 13px;cursor:pointer;display:inline-block}
-button.plain,.btn.plain{background:transparent;color:var(--fg);border:1px solid var(--line)}button.danger{background:var(--warn);color:#fff}
-main{max-width:1060px;margin:0 auto;padding:22px 20px 60px}
-.flash{background:var(--chip);border:1px solid var(--line);padding:9px 13px;border-radius:8px;margin-bottom:16px}
-.error{border-color:var(--warn);color:var(--warn)}
-.cols{display:grid;grid-template-columns:minmax(0,1fr) 270px;gap:28px}@media (max-width:820px){.cols{grid-template-columns:1fr}}
-.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
-.hits{list-style:none;padding:0;margin:0}.hits li{padding:11px 0;border-bottom:1px solid var(--line)}
-.hits .meta,.muted{color:var(--muted);font-size:13px}.hits .snip{font-size:14px;margin-top:3px;overflow-wrap:anywhere}
-.tag{background:var(--chip);border-radius:4px;padding:0 5px;font-size:13px;color:var(--accent)}
-.cat{background:var(--chip);border-radius:4px;padding:0 6px;font-size:12px;font-weight:600;text-transform:lowercase;margin-right:2px}
-.badge{border:1px solid var(--line);border-radius:999px;padding:0 8px;font-size:12px;color:var(--muted);margin-left:6px}
-.note h1{margin:0 0 4px}.note .body{margin-top:18px;overflow-wrap:anywhere}.note pre{background:var(--code);padding:10px 12px;border-radius:8px;overflow-x:auto}
-.note code{background:var(--code);padding:1px 4px;border-radius:4px;font-size:13px}.note pre code{padding:0;background:none}
-.wiki{border-bottom:1px dashed var(--accent)}.wiki.missing{color:var(--warn);border-color:var(--warn)}
-blockquote{border-left:3px solid var(--line);margin:8px 0;padding:2px 12px;color:var(--muted)}
-.side h3{font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin:18px 0 6px}.side ul{padding-left:18px;margin:0}
-.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}form.inline{display:inline}
-details summary{cursor:pointer;color:var(--muted);margin:10px 0 4px}
-table{border-collapse:collapse;width:100%}td,th{text-align:left;padding:7px 6px;border-bottom:1px solid var(--line);font-size:14px;vertical-align:top}
-.wrap{overflow-x:auto}pre.box{background:var(--code);padding:10px 12px;border-radius:8px;overflow-x:auto;font-size:13px}
-.hero{max-width:640px;margin:8vh auto 0}.hero h1{font-size:34px;line-height:1.2;margin:0 0 12px}
-`;
+// Styles come from /app.css, built from site/src/styles/app.css with the
+// same design tokens as the marketing site and docs.
 
 export function page(o: PageOptions, body: string): Response {
 	const ws = o.current;
-	const tab = (key: PageOptions["active"], href: string, label: string) => `<a href="${href}" class="${o.active === key ? "on" : ""}">${label}</a>`;
+	const item = (key: PageOptions["active"], href: string, label: string) =>
+		`<a href="${href}" class="block rounded-md px-2.5 py-1.5 text-[14px] no-underline ${o.active === key ? "bg-accent-soft text-ink" : "text-muted hover:bg-accent-soft/60 hover:text-ink"}">${label}</a>`;
 	const nav = ws
-		? tab("notes", `/w/${ws.slug}`, "Notes") +
-			tab("graph", `/w/${ws.slug}/graph`, "Graph") +
-			tab("history", `/w/${ws.slug}/history`, "History") +
-			tab("import", `/w/${ws.slug}/import`, "Import") +
-			tab("settings", `/w/${ws.slug}/settings`, "Settings") +
-			tab("connect", `/connect`, "Connect")
+		? item("notes", `/w/${ws.slug}`, "Notes") +
+			item("graph", `/w/${ws.slug}/graph`, "Graph") +
+			item("history", `/w/${ws.slug}/history`, "History") +
+			item("import", `/w/${ws.slug}/import`, "Import") +
+			item("settings", `/w/${ws.slug}/settings`, "Settings") +
+			item("connect", `/connect`, "Connect apps")
 		: o.user
-			? tab("connect", `/connect`, "Connect")
+			? item("connect", `/connect`, "Connect apps")
 			: "";
 	const switcher =
 		ws && o.workspaces && o.workspaces.length > 1
-			? `<select aria-label="Workspace" onchange="location.href='/w/'+this.value">${o.workspaces
+			? `<select aria-label="Workspace" class="w-full" onchange="location.href='/w/'+this.value">${o.workspaces
 					.map((w) => `<option value="${escape(w.slug)}"${w.id === ws.id ? " selected" : ""}>${escape(w.name)}${w.kind === "team" ? " (team)" : ""}</option>`)
 					.join("")}</select>`
-			: "";
+			: ws
+				? `<p class="px-2.5 text-[13px] text-muted">${escape(ws.name)}</p>`
+				: "";
 	const me = o.user
-		? `<span class="me">${o.user.avatar_url ? `<img src="${escape(o.user.avatar_url)}" alt="">` : ""}${escape(o.user.login)}
-			<form class="inline" method="post" action="/logout"><button class="plain" type="submit">Sign out</button></form></span>`
-		: `<a class="btn" href="/login">Sign in with GitHub</a>`;
+		? `<div class="flex items-center gap-2 px-2.5">${o.user.avatar_url ? `<img src="${escape(o.user.avatar_url)}" alt="" class="size-6 rounded-full">` : ""}
+			<span class="truncate text-[14px]">${escape(o.user.login)}</span></div>
+			<form method="post" action="/logout" class="px-2.5"><button class="plain w-full justify-center" type="submit">Sign out</button></form>`
+		: `<a class="btn" href="/login?next=%2Fapp">Sign in with GitHub</a>`;
 	const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${escape(o.title)} · gitmind</title>
-<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="32x32"><link rel="apple-touch-icon" href="/apple-touch-icon.png"><style>${STYLE}</style></head><body>
-<header><a class="brand" href="/"><img src="/favicon.svg" alt="" style="width:22px;height:22px;border-radius:5px;vertical-align:-5px;margin-right:6px">gitmind</a>${switcher}<nav>${nav}</nav>${me}</header>
-<main>${o.flash ? `<div class="flash">${escape(o.flash)}</div>` : ""}${o.error ? `<div class="flash error">${escape(o.error)}</div>` : ""}${body}</main></body></html>`;
+<title>${escape(o.title)} · gitmind</title><meta name="robots" content="noindex">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="32x32"><link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="stylesheet" href="/app.css"></head>
+<body class="min-h-screen bg-paper text-ink">
+<input id="nav" type="checkbox" class="peer hidden">
+<header class="sticky top-0 z-20 flex items-center gap-3 border-b border-line bg-paper/90 px-4 py-3 backdrop-blur md:hidden">
+	<label for="nav" class="cursor-pointer rounded-md border border-line px-2.5 py-1 text-[14px]">Menu</label>
+	<a href="/" class="flex items-center gap-2 font-serif text-[17px] text-ink no-underline">${LOGO}gitmind</a>
+</header>
+<aside class="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col gap-5 overflow-y-auto border-r border-line bg-paper px-3 py-5 peer-checked:flex md:flex">
+	<a href="/" class="flex items-center gap-2 px-2.5 font-serif text-[19px] font-medium text-ink no-underline">${LOGO}gitmind</a>
+	${switcher}
+	<nav class="flex flex-col gap-0.5">${nav}</nav>
+	<nav class="flex flex-col gap-0.5 border-t border-line pt-4">
+		<a href="/docs/" class="block rounded-md px-2.5 py-1.5 text-[14px] text-muted no-underline hover:text-ink">Documentation</a>
+		<a href="https://github.com/dunkbing/gitmind" class="block rounded-md px-2.5 py-1.5 text-[14px] text-muted no-underline hover:text-ink">GitHub</a>
+	</nav>
+	<div class="mt-auto flex flex-col gap-3 border-t border-line pt-4">${me}</div>
+</aside>
+<label for="nav" class="fixed inset-0 z-20 hidden bg-black/30 peer-checked:block md:hidden!"></label>
+<div class="md:pl-60"><main class="mx-auto max-w-[1040px] px-5 py-8 md:px-10 md:py-12">
+${o.flash ? `<div class="flash">${escape(o.flash)}</div>` : ""}${o.error ? `<div class="flash error">${escape(o.error)}</div>` : ""}${body}
+</main></div></body></html>`;
 	return new Response(html, {
 		headers: {
 			"Content-Type": "text/html; charset=utf-8",
-			"Content-Security-Policy": "default-src 'self'; img-src 'self' https://avatars.githubusercontent.com data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; frame-ancestors 'none'",
+			"Content-Security-Policy": "default-src 'self'; img-src 'self' https://avatars.githubusercontent.com data:; style-src 'self' 'unsafe-inline'; script-src 'unsafe-inline'; font-src 'self'; frame-ancestors 'none'",
 			"X-Frame-Options": "DENY",
 			"Referrer-Policy": "same-origin",
 		},
 	});
 }
+
+// The app icon inline, in the page's accent color.
+const LOGO = `<svg viewBox="0 0 512 512" width="22" height="22" aria-hidden="true" class="shrink-0 text-accent"><g fill="none" stroke="currentColor" stroke-linecap="round"><path d="M176 112 V346" stroke-width="44"/><path d="M176 300 C176 210 336 244 336 150" stroke-width="44"/><circle cx="176" cy="404" r="48" stroke-width="40"/></g><g fill="currentColor"><circle cx="176" cy="104" r="58"/><circle cx="336" cy="134" r="58"/></g></svg>`;
 
 export { escape };

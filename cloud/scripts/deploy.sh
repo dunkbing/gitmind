@@ -32,6 +32,9 @@ if [ -n "${GITHUB_CLIENT_ID:-}" ]; then
 	sed -i.bak "s/\"GITHUB_CLIENT_ID\": \"[^\"]*\"/\"GITHUB_CLIENT_ID\": \"$GITHUB_CLIENT_ID\"/" wrangler.jsonc && rm wrangler.jsonc.bak
 fi
 
+echo "== building the site"
+(cd site && bun install --frozen-lockfile >/dev/null && bun run build >/dev/null)
+
 echo "== applying database migrations"
 $W d1 migrations apply DB --remote
 

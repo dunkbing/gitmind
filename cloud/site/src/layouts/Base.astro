@@ -1,0 +1,60 @@
+---
+import "../styles/global.css";
+import Logo from "../components/Logo.astro";
+import Sidebar from "../components/Sidebar.astro";
+
+interface Props {
+	title: string;
+	description: string;
+	jsonLd?: Record<string, unknown>;
+}
+const { title, description, jsonLd } = Astro.props;
+const canonical = new URL(Astro.url.pathname, Astro.site).toString();
+const fullTitle = title === "gitmind" ? "gitmind: one memory for all your AI agents" : `${title} · gitmind`;
+---
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>{fullTitle}</title>
+		<meta name="description" content={description} />
+		<link rel="canonical" href={canonical} />
+		<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+		<link rel="icon" href="/favicon.ico" sizes="32x32" />
+		<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+		<link rel="sitemap" href="/sitemap-index.xml" />
+		<link rel="alternate" type="text/plain" href="/llms.txt" title="LLM-friendly index" />
+		<link rel="preload" href="/fonts/ia-writer-quattro-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin />
+		<link rel="preload" href="/fonts/ibm-plex-serif-latin-500-normal.woff2" as="font" type="font/woff2" crossorigin />
+		<meta property="og:type" content="website" />
+		<meta property="og:site_name" content="gitmind" />
+		<meta property="og:title" content={fullTitle} />
+		<meta property="og:description" content={description} />
+		<meta property="og:url" content={canonical} />
+		<meta property="og:image" content={new URL("/icon-512.png", Astro.site).toString()} />
+		<meta name="twitter:card" content="summary" />
+		<meta name="theme-color" content="#f5f7f6" media="(prefers-color-scheme: light)" />
+		<meta name="theme-color" content="#0d1311" media="(prefers-color-scheme: dark)" />
+		{jsonLd && <script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />}
+	</head>
+	<body class="min-h-screen bg-paper text-ink">
+		<input id="nav" type="checkbox" class="peer hidden" />
+		<header class="sticky top-0 z-20 flex items-center gap-3 border-b border-line bg-paper/90 px-4 py-3 backdrop-blur md:hidden">
+			<label for="nav" class="cursor-pointer rounded-md border border-line px-2.5 py-1 text-[14px]" aria-label="Menu">Menu</label>
+			<a href="/" class="flex items-center gap-2 font-serif text-[17px] text-ink no-underline"><Logo size={20} /> gitmind</a>
+		</header>
+		<aside class="fixed inset-y-0 left-0 z-30 hidden w-64 border-r border-line bg-paper peer-checked:block md:block">
+			<Sidebar />
+		</aside>
+		<label for="nav" class="fixed inset-0 z-20 hidden bg-black/30 peer-checked:block md:hidden!" aria-hidden="true"></label>
+		<div class="md:pl-64">
+			<main class="mx-auto max-w-[760px] px-5 py-10 md:px-10 md:py-16">
+				<slot />
+			</main>
+			<footer class="mx-auto max-w-[760px] border-t border-line px-5 py-8 text-[13px] text-muted md:px-10">
+				gitmind is open source (AGPL-3.0). <a href="https://github.com/dunkbing/gitmind">Source on GitHub</a> · <a href="/docs/self-hosting/">Self-host it</a> · <a href="/llms.txt">llms.txt</a>
+			</footer>
+		</div>
+	</body>
+</html>

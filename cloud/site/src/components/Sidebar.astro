@@ -1,0 +1,32 @@
+---
+import { getCollection } from "astro:content";
+import Logo from "./Logo.astro";
+
+const current = Astro.url.pathname;
+const docs = (await getCollection("docs")).sort((a, b) => a.data.order - b.data.order);
+const sections = ["Getting started", "Guides", "Reference"] as const;
+const link = (href: string, active: boolean) =>
+	`block rounded-md px-2.5 py-1 text-[14px] no-underline ${active ? "bg-accent-soft text-ink" : "text-muted hover:text-ink hover:bg-accent-soft/60"}`;
+---
+<nav aria-label="Site" class="flex h-full flex-col gap-5 overflow-y-auto px-4 py-5">
+	<a href="/" class="flex items-center gap-2 px-2.5 font-serif text-[19px] font-medium text-ink no-underline">
+		<Logo /> gitmind
+	</a>
+	<div class="flex flex-col gap-0.5">
+		<a href="/" class={link("/", current === "/")}>Overview</a>
+		<a href="/docs/" class={link("/docs/", current === "/docs/")}>Documentation</a>
+		<a href="https://github.com/dunkbing/gitmind" class={link("", false)}>GitHub</a>
+	</div>
+	{sections.map((s) => (
+		<div class="flex flex-col gap-0.5">
+			<p class="px-2.5 pb-1 text-[11px] uppercase tracking-[0.08em] text-muted">{s}</p>
+			{docs.filter((d) => d.data.section === s).map((d) => (
+				<a href={`/docs/${d.id}/`} class={link("", current === `/docs/${d.id}/`)}>{d.data.title}</a>
+			))}
+		</div>
+	))}
+	<div class="mt-auto flex flex-col gap-2 border-t border-line pt-4">
+		<a href="/app" class="rounded-md bg-accent px-3 py-2 text-center text-[14px] text-accent-ink no-underline hover:opacity-90">Open gitmind</a>
+		<p class="text-center text-[12px] text-muted">Sign in with GitHub. Free and open source.</p>
+	</div>
+</nav>

@@ -1,0 +1,21 @@
+---
+import { getCollection } from "astro:content";
+import Base from "../../layouts/Base.astro";
+
+const docs = (await getCollection("docs")).sort((a, b) => a.data.order - b.data.order);
+const sections = ["Getting started", "Guides", "Reference"] as const;
+---
+<Base title="Documentation" description="Set up gitmind, connect your AI apps, sync notes with the CLI, work in teams, and self-host it.">
+	<h1 class="text-[38px]">Documentation</h1>
+	<p class="mt-4 text-[17px] text-muted">Everything about using, connecting and self-hosting gitmind.</p>
+	{sections.map((s) => (
+		<section class="mt-10">
+			<h2 class="text-[13px] font-sans uppercase tracking-[0.08em] text-muted">{s}</h2>
+			<ul class="mt-3 divide-y divide-line border-y border-line">
+				{docs.filter((d) => d.data.section === s).map((d) => (
+					<li class="py-3"><a href={`/docs/${d.id}/`} class="font-serif text-[17px] no-underline">{d.data.title}</a><p class="text-[14px] text-muted">{d.data.description}</p></li>
+				))}
+			</ul>
+		</section>
+	))}
+</Base>

@@ -1,0 +1,74 @@
+/* Shared by the site (global.css) and the app pages (app.css). */
+
+@font-face { font-family: "iA Writer Quattro"; src: url("/fonts/ia-writer-quattro-latin-400-normal.woff2") format("woff2"); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: "iA Writer Quattro"; src: url("/fonts/ia-writer-quattro-latin-400-italic.woff2") format("woff2"); font-weight: 400; font-style: italic; font-display: swap; }
+@font-face { font-family: "iA Writer Quattro"; src: url("/fonts/ia-writer-quattro-latin-700-normal.woff2") format("woff2"); font-weight: 700; font-style: normal; font-display: swap; }
+@font-face { font-family: "IBM Plex Serif"; src: url("/fonts/ibm-plex-serif-latin-400-normal.woff2") format("woff2"); font-weight: 400; font-display: swap; }
+@font-face { font-family: "IBM Plex Serif"; src: url("/fonts/ibm-plex-serif-latin-500-normal.woff2") format("woff2"); font-weight: 500; font-display: swap; }
+@font-face { font-family: "IBM Plex Serif"; src: url("/fonts/ibm-plex-serif-latin-600-normal.woff2") format("woff2"); font-weight: 600; font-display: swap; }
+@font-face { font-family: "Lilex"; src: url("/fonts/lilex-latin-400-normal.woff2") format("woff2"); font-weight: 400; font-display: swap; }
+
+/* gitmind palette: green-tinted paper and ink, with the icon's green as the
+   one accent. Dark mode follows the system unless data-theme is set. */
+:root {
+	--paper: #f5f7f6;
+	--surface: #ffffff;
+	--ink: #15201c;
+	--ink-muted: #56645e;
+	--line: #dce4e0;
+	--accent: #1f6b55;
+	--accent-ink: #ffffff;
+	--accent-soft: #e4efea;
+	--danger: #b3432c;
+	color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+	:root:not([data-theme="light"]) {
+		--paper: #0d1311;
+		--surface: #141c19;
+		--ink: #e2eae6;
+		--ink-muted: #98aba3;
+		--line: #24302b;
+		--accent: #6cc8a5;
+		--accent-ink: #0a1913;
+		--accent-soft: #182a23;
+		--danger: #ee8a6f;
+		color-scheme: dark;
+	}
+}
+:root[data-theme="dark"] {
+	--paper: #0d1311;
+	--surface: #141c19;
+	--ink: #e2eae6;
+	--ink-muted: #98aba3;
+	--line: #24302b;
+	--accent: #6cc8a5;
+	--accent-ink: #0a1913;
+	--accent-soft: #182a23;
+	--danger: #ee8a6f;
+	color-scheme: dark;
+}
+
+@theme inline {
+	--color-paper: var(--paper);
+	--color-surface: var(--surface);
+	--color-ink: var(--ink);
+	--color-muted: var(--ink-muted);
+	--color-line: var(--line);
+	--color-accent: var(--accent);
+	--color-accent-ink: var(--accent-ink);
+	--color-accent-soft: var(--accent-soft);
+	--color-danger: var(--danger);
+	--font-sans: "iA Writer Quattro", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+	--font-serif: "IBM Plex Serif", ui-serif, Georgia, serif;
+	--font-mono: "Lilex", ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+@layer base {
+	html { background: var(--paper); color: var(--ink); }
+	body { font-family: var(--font-sans); font-size: 15px; line-height: 1.6; -webkit-font-smoothing: antialiased; }
+	h1, h2, h3 { font-family: var(--font-serif); font-weight: 500; letter-spacing: -0.01em; line-height: 1.2; }
+	code, pre, kbd { font-family: var(--font-mono); }
+	a { color: var(--accent); }
+	::selection { background: var(--accent-soft); }
+}

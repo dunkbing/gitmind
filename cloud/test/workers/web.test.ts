@@ -16,7 +16,7 @@ describe("web app", () => {
 
 	it("creates, views, edits, moves and deletes notes", async () => {
 		const erin = await signedIn("erin");
-		const home = await erin.fetch("/");
+		const home = await erin.fetch("/app");
 		expect(home.headers.get("Location")).toBe("/w/erin");
 		expect(await html(await erin.fetch("/w/erin"))).toContain("No notes yet");
 
@@ -155,7 +155,7 @@ describe("GitHub sign-in without a client secret", () => {
 		expect(await (await b.fetch("/login/poll", { method: "POST" })).json()).toEqual({ pending: true });
 		expect(await (await b.fetch("/login/poll", { method: "POST" })).json()).toEqual({ done: true, next: "/connect" });
 		// Signed in, with a personal workspace named after the GitHub login.
-		expect((await b.fetch("/")).headers.get("Location")).toBe("/w/octo-gh");
+		expect((await b.fetch("/app")).headers.get("Location")).toBe("/w/octo-gh");
 
 		// The poll is bound to the browser that started it.
 		const other = new Browser();
