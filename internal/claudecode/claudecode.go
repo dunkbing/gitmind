@@ -77,13 +77,21 @@ func Find(configDir, home string) ([]Memory, error) {
 }
 
 // ProjectDir turns Claude Code's directory name for a project (its path
-// with "/" replaced by "-", e.g. -home-me-code-my-app) into the gitmind
-// directory for its notes: the project's folder name ("my-app"), found by
-// checking which real directories the name can stand for, or "general"
-// for the home directory.
+// with separators replaced by "-": -home-me-code-my-app, or on Windows
+// C--Users-me-code-my-app) into the gitmind directory for its notes: the
+// project's folder name ("my-app"), found by checking which real
+// directories the name can stand for, or "general" for the home directory.
 func ProjectDir(slug, home string) string {
-	tokens := strings.Split(strings.TrimPrefix(slug, "-"), "-")
-	cur := "/"
+	cur, rest := string(filepath.Separator), strings.TrimPrefix(slug, "-")
+	if m := windowsDrive.FindStringSubmatch(slug); m != nil {
+		cur, rest = m[1]+`:\`, m[2]
+	}
+	var tokens []string
+	for _, t := range strings.Split(rest, "-") {
+		if t != "" {
+			tokens = append(tokens, t)
+		}
+	}
 	for i := 0; i < len(tokens); {
 		// The longest run of tokens that names an existing directory wins
 		// ("my-app" over "my/app").
@@ -109,6 +117,8 @@ func ProjectDir(slug, home string) string {
 	}
 	return d
 }
+
+var windowsDrive = regexp.MustCompile(`^([A-Za-z])--(.*)$`)
 
 var indexLine = regexp.MustCompile(`^\s*[-*]\s*\[([^\]]+)\]\(([^)]+)\)`)
 

@@ -15,13 +15,15 @@ func write(t *testing.T, path, content string) {
 	}
 }
 
+// slug names a project's directory the way Claude Code does.
+func slug(p string) string { return strings.NewReplacer("/", "-", `\`, "-", ":", "-").Replace(p) }
+
 func TestProjectDir(t *testing.T) {
 	root := t.TempDir()
 	home := filepath.Join(root, "home", "me")
 	for _, d := range []string{"code/my-app", "code/my/other", "agent-memory"} {
 		os.MkdirAll(filepath.Join(home, d), 0o755)
 	}
-	slug := func(p string) string { return strings.ReplaceAll(p, "/", "-") }
 	for in, want := range map[string]string{
 		slug(home):                        "general",
 		slug(home + "/code/my-app"):       "my-app", // a dash in the name, not a directory
@@ -40,7 +42,7 @@ func TestFindAndConvert(t *testing.T) {
 	home := filepath.Join(root, "home", "me")
 	os.MkdirAll(filepath.Join(home, "code", "shop"), 0o755)
 	cfg := filepath.Join(home, ".claude")
-	mem := filepath.Join(cfg, "projects", strings.ReplaceAll(filepath.Join(home, "code", "shop"), "/", "-"), "memory")
+	mem := filepath.Join(cfg, "projects", slug(filepath.Join(home, "code", "shop")), "memory")
 	write(t, filepath.Join(mem, "MEMORY.md"), "- [Deploy steps](deploy-steps.md) — how to ship\n- [JS package manager](js-pm.md) — bun\n")
 	write(t, filepath.Join(mem, "deploy-steps.md"), "---\nname: deploy-steps\ndescription: Deploy with make ship after tests pass\nmetadata:\n  type: project\n  modified: 2026-10-01T10:00:00Z\n---\n\nRun `make ship`. See [[js-pm]].\n")
 	write(t, filepath.Join(mem, "js-pm.md"), "---\nname: js-pm\ndescription: \"Use bun, not npm\"\ntype: feedback\n---\n\n**Why:** npm crashed.\n")
