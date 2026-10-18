@@ -85,9 +85,15 @@ function build(view: EditorView): DecorationSet {
 					return;
 				}
 				if (name === "HeaderMark") {
-					if (!active.has(lineOf(node.from))) {
-						const after = state.doc.sliceString(node.to, node.to + 1) === " " ? node.to + 1 : node.to;
-						decos.push(hide.range(node.from, after));
+					const line = state.doc.lineAt(node.from);
+					const after = state.doc.sliceString(node.to, node.to + 1) === " " ? node.to + 1 : node.to;
+					if (node.from === line.from) {
+						// The leading "## " sits in the left margin, faded in on the
+						// line being edited, so the heading text never moves.
+						const cls = active.has(line.number) ? "cm-margin-mark cm-margin-mark-on" : "cm-margin-mark";
+						decos.push(Decoration.mark({ class: cls }).range(node.from, after));
+					} else if (!active.has(line.number)) {
+						decos.push(hide.range(node.from - (state.doc.sliceString(node.from - 1, node.from) === " " ? 1 : 0), node.to)); // closing "##"
 					}
 					return;
 				}
@@ -128,9 +134,11 @@ function build(view: EditorView): DecorationSet {
 					}
 					return;
 				}
-				if (name === "QuoteMark" && !active.has(lineOf(node.from))) {
+				if (name === "QuoteMark") {
+					const line = state.doc.lineAt(node.from);
 					const after = state.doc.sliceString(node.to, node.to + 1) === " " ? node.to + 1 : node.to;
-					decos.push(hide.range(node.from, after));
+					const cls = active.has(line.number) ? "cm-margin-mark cm-margin-mark-on" : "cm-margin-mark";
+					decos.push(Decoration.mark({ class: cls }).range(node.from, after));
 					return;
 				}
 				if (name === "FencedCode") {

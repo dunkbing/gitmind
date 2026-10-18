@@ -10,10 +10,16 @@ import { Compartment, EditorState, type Extension } from "@codemirror/state";
 import { EditorView, drawSelection, keymap, placeholder } from "@codemirror/view";
 import { tags as t } from "@lezer/highlight";
 import { useEffect, useRef } from "react";
+import { frontmatter } from "./frontmatter";
 import { linkClicks, livePreview } from "./livePreview";
 import { searchPanel } from "./searchPanel";
 
+// Obsidian's three views: live preview (formatted, syntax shown where you
+// edit), source (the raw file) and reading (formatted, not editable).
+export type Mode = "live" | "source" | "read";
+
 export interface EditorProps {
+	mode: Mode;
 	value: string;
 	onChange: (value: string) => void;
 	readOnly?: boolean;
@@ -64,6 +70,12 @@ function wikiCompletion(titles: () => string[]) {
 	};
 }
 
+const editability = (p: EditorProps) => {
+	const locked = !!p.readOnly || p.mode === "read";
+	return [EditorState.readOnly.of(locked), EditorView.editable.of(!locked)];
+};
+
+// The editor is built once per mode; the parent keys it by mode.
 export function Editor(p: EditorProps) {
 	const host = useRef<HTMLDivElement>(null);
 	const view = useRef<EditorView | null>(null);
@@ -76,17 +88,16 @@ export function Editor(p: EditorProps) {
 			history(),
 			drawSelection(),
 			EditorView.lineWrapping,
-			markdown({ base: markdownLanguage, addKeymap: true }),
+			markdown({ base: markdownLanguage, addKeymap: true, extensions: [frontmatter] }),
 			syntaxHighlighting(highlight),
-			livePreview,
+			p.mode === "source" ? EditorView.editorAttributes.of({ class: "gm-source" }) : livePreview,
 			search({ top: true, createPanel: searchPanel }),
 			highlightSelectionMatches({ minSelectionLength: 3 }),
 			autocompletion({ override: [wikiCompletion(() => props.current.titles())], icons: false }),
-			placeholder("Start writing… Use [[ to link a note, - [decision] for a fact, #tag to tag it."),
+			p.mode === "read" ? [] : placeholder("Start writing… Use [[ to link a note, - [decision] for a fact, #tag to tag it."),
 			keymap.of([
 				{ key: "Mod-b", run: wrap("**") },
 				{ key: "Mod-i", run: wrap("*") },
-				{ key: "Mod-e", run: wrap("`") },
 				{
 					key: "ArrowUp",
 					run: (v) => {
@@ -101,8 +112,8 @@ export function Editor(p: EditorProps) {
 				...defaultKeymap,
 				indentWithTab,
 			]),
-			linkClicks({ wiki: (target) => props.current.onWikiLink(target), tag: (tag) => props.current.onTag(tag) }),
-			editable.current.of([EditorState.readOnly.of(!!p.readOnly), EditorView.editable.of(!p.readOnly)]),
+			p.mode === "source" ? [] : linkClicks({ wiki: (target) => props.current.onWikiLink(target), tag: (tag) => props.current.onTag(tag) }),
+			editable.current.of(editability(p)),
 			EditorView.updateListener.of((u) => {
 				if (u.docChanged) props.current.onChange(u.state.doc.toString());
 			}),
@@ -129,8 +140,8 @@ export function Editor(p: EditorProps) {
 	}, [p.value]);
 
 	useEffect(() => {
-		view.current?.dispatch({ effects: editable.current.reconfigure([EditorState.readOnly.of(!!p.readOnly), EditorView.editable.of(!p.readOnly)]) });
-	}, [p.readOnly]);
+		view.current?.dispatch({ effects: editable.current.reconfigure(editability(p)) });
+	}, [p.readOnly, p.mode]);
 
 	return <div ref={host} className="gm-editor" />;
 }

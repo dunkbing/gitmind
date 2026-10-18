@@ -2,13 +2,13 @@
 // editor. Changes save on their own a moment after typing stops; renaming
 // the title moves the note (and updates links to it).
 
-import { ArrowUpRight, Check, Copy, FolderInput, Link2, Lock, MoreHorizontal, PanelRight, Pin, PinOff, Trash2, X } from "lucide-react";
+import { ArrowUpRight, BookOpen, Check, Code2, Copy, FolderInput, PenLine, Link2, Lock, MoreHorizontal, PanelRight, Pin, PinOff, Trash2, X } from "lucide-react";
 import { type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { openSearchPanel } from "@codemirror/search";
 import type { EditorView } from "@codemirror/view";
 import { format, links, normalizeTags, parse, type Note } from "../../../src/engine/notes";
 import { ApiError, type NoteData, type Workspace, api } from "../api";
-import { Editor } from "../editor/Editor";
+import { Editor, type Mode } from "../editor/Editor";
 import { ago, dirOf, resolver } from "../notes";
 import { Link, navigate, noteUrl, useLocation, wsUrl } from "../router";
 import { cachedNote, forgetNote, loadNote, loadNotes, patchNotes, storeNote, toast, useStore } from "../store";
@@ -85,6 +85,21 @@ function NoteEditor({ ws, initial, onMoved }: { ws: Workspace; initial: NoteData
 	const movingRef = useRef(false);
 	const resolve = useMemo(() => resolver(notes), [notes]);
 	const readOnly = note.locked;
+	const [mode, setModeState] = useState<Mode>(() => {
+		const m = localStorage.getItem("gm-mode");
+		return m === "source" || m === "read" ? m : "live";
+	});
+	const setMode = (m: Mode) => {
+		setModeState(m);
+		try {
+			localStorage.setItem("gm-mode", m);
+		} catch {}
+	};
+	// Source mode edits the whole file; this is its text when entering it.
+	const [raw, setRaw] = useState<string | null>(null);
+	useEffect(() => {
+		setRaw(mode === "source" ? format({ ...latest.current.note, body: latest.current.body }) : null);
+	}, [mode]);
 
 	// A note just created from "New note" opens with its title selected.
 	useEffect(() => {
@@ -185,6 +200,30 @@ function NoteEditor({ ws, initial, onMoved }: { ws: Workspace; initial: NoteData
 		latest.current.body = b;
 		schedule();
 	};
+
+	// In source mode the frontmatter is edited too: title, tags, pinned…
+	const onRaw = (text: string) => {
+		setRaw(text);
+		const p = parse(pathRef.current, text);
+		const n = { ...p, path: pathRef.current };
+		setNote(n);
+		setTitle(n.title);
+		setBody(p.body);
+		latest.current = { note: n, body: p.body };
+		schedule();
+	};
+
+	// ⌘E switches between editing and reading, as in Obsidian.
+	useEffect(() => {
+		const onKey = (e: globalThis.KeyboardEvent) => {
+			if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "e") {
+				e.preventDefault();
+				setMode(mode === "read" ? "live" : "read");
+			}
+		};
+		addEventListener("keydown", onKey);
+		return () => removeEventListener("keydown", onKey);
+	}, [mode]);
 
 	const setTags = (tags: string[]) => {
 		const n = { ...note, tags: normalizeTags(tags) };
@@ -316,6 +355,7 @@ function NoteEditor({ ws, initial, onMoved }: { ws: Workspace; initial: NoteData
 						)}
 					</div>
 					<SaveStatus status={status} />
+					<ModeSwitch mode={mode} onMode={setMode} />
 					<button className="btn-ghost px-1.5" title={note.pinned ? "Unpin" : "Pin: show in full at the start of every agent session"} onClick={togglePin}>
 						{note.pinned ? <PinOff size={16} /> : <Pin size={16} />}
 					</button>
@@ -387,12 +427,12 @@ function NoteEditor({ ws, initial, onMoved }: { ws: Workspace; initial: NoteData
 					</div>
 				)}
 
-				<div className="mx-auto max-w-[760px] px-5 pt-6 pb-4 md:px-12">
+				<div className={`mx-auto max-w-[760px] px-5 pt-6 pb-4 md:px-12 ${mode === "source" ? "hidden" : ""}`}>
 					<textarea
 						ref={titleRef}
 						rows={1}
 						value={title}
-						readOnly={readOnly}
+						readOnly={readOnly || mode === "read"}
 						onChange={(e) => setTitle(e.target.value.replace(/\n/g, ""))}
 						onBlur={rename}
 						onKeyDown={(e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -408,13 +448,15 @@ function NoteEditor({ ws, initial, onMoved }: { ws: Workspace; initial: NoteData
 						className="field-sizing-content w-full resize-none bg-transparent font-serif text-[34px] leading-tight font-medium tracking-tight outline-none placeholder:text-muted/50"
 						placeholder="Untitled"
 					/>
-					<Properties note={note} updated={initial.updated} path={path} readOnly={readOnly} onTags={setTags} ws={ws} />
+					<Properties note={note} updated={initial.updated} path={path} readOnly={readOnly || mode === "read"} onTags={setTags} ws={ws} />
 				</div>
 
-				<div className="mx-auto max-w-[760px] px-5 md:px-12">
+				<div className={`mx-auto max-w-[760px] px-5 md:px-12 ${mode === "source" ? "pt-6" : ""}`}>
 					<Editor
-						value={body}
-						onChange={onBody}
+						key={mode}
+						mode={mode}
+						value={mode === "source" ? (raw ?? format({ ...note, body })) : body}
+						onChange={mode === "source" ? onRaw : onBody}
 						readOnly={readOnly}
 						titles={() => notes.map((n) => n.title)}
 						onWikiLink={openLink}
@@ -490,6 +532,31 @@ function NoteEditor({ ws, initial, onMoved }: { ws: Workspace; initial: NoteData
 					</div>
 				</Dialog>
 			)}
+		</div>
+	);
+}
+
+function ModeSwitch({ mode, onMode }: { mode: Mode; onMode: (m: Mode) => void }) {
+	const mac = /Mac|iPhone|iPad/.test(navigator.platform);
+	const options: { m: Mode; icon: React.ReactNode; title: string }[] = [
+		{ m: "live", icon: <PenLine size={14} />, title: "Live preview: formatted, with Markdown shown where you edit" },
+		{ m: "source", icon: <Code2 size={14} />, title: "Source: the raw Markdown file, frontmatter included" },
+		{ m: "read", icon: <BookOpen size={14} />, title: `Reading view (${mac ? "⌘" : "Ctrl+"}E)` },
+	];
+	return (
+		<div className="mr-1 flex items-center rounded-md border border-line p-0.5" role="radiogroup" aria-label="View">
+			{options.map((o) => (
+				<button
+					key={o.m}
+					role="radio"
+					aria-checked={mode === o.m}
+					title={o.title}
+					onClick={() => onMode(o.m)}
+					className={`rounded px-1.5 py-1 ${mode === o.m ? "bg-accent-soft text-accent" : "text-muted hover:text-ink"}`}
+				>
+					{o.icon}
+				</button>
+			))}
 		</div>
 	);
 }

@@ -64,6 +64,7 @@
 /* ---- the editor ------------------------------------------------------- */
 
 .gm-editor .cm-editor {
+	font-variant-ligatures: none; /* Lilex would join "##", "->" and the like */
 	background: transparent;
 	font-family: var(--font-sans);
 	font-size: 16px;
@@ -91,6 +92,15 @@
 .gm-editor .cm-focused .cm-selectionBackground,
 .gm-editor ::selection {
 	background: color-mix(in srgb, var(--accent) 22%, transparent) !important;
+}
+/* Source mode: the raw file in the mono font. */
+.gm-editor .gm-source {
+	font-family: var(--font-mono);
+	font-size: 13.5px;
+	line-height: 1.65;
+}
+.gm-editor .gm-source .cm-content {
+	padding-bottom: 40vh;
 }
 .gm-editor .cm-placeholder {
 	color: var(--ink-muted);
@@ -159,6 +169,33 @@
 	border-left: 3px solid var(--line);
 	padding-left: 12px !important;
 	color: var(--ink-muted);
+}
+/* Heading and quote marks live in the left margin (out of the text flow),
+   shown faintly on the line being edited. */
+.gm-editor .cm-h,
+.gm-editor .cm-quote {
+	position: relative;
+}
+.gm-editor .cm-margin-mark {
+	position: absolute;
+	right: 100%;
+	bottom: 0.45em;
+	padding-right: 0.5em;
+	font-family: var(--font-sans);
+	font-size: 13px;
+	font-weight: 400;
+	letter-spacing: 0.04em;
+	line-height: 1;
+	white-space: pre;
+	color: var(--ink-muted);
+	opacity: 0;
+	transition: opacity 0.12s;
+}
+.gm-editor .cm-quote .cm-margin-mark {
+	margin-right: 3px; /* clear the quote's border */
+}
+.gm-editor .cm-margin-mark-on {
+	opacity: 0.7;
 }
 .gm-editor .cm-link {
 	color: var(--accent);
