@@ -431,6 +431,9 @@ export class Workspace extends DurableObject<Env> {
 	private async fresh(): Promise<void> {
 		const window = this.env.FRESHNESS_MS !== undefined ? Number(this.env.FRESHNESS_MS) : FRESHNESS_MS;
 		if (Date.now() - this.lastCheck < window && this.store.meta("head")) return;
+		// Passages may be waiting without a scheduled alarm (e.g. after a
+		// model change cleared the vectors); make sure they get embedded.
+		await this.embedLater();
 		await this.serialize(async () => {
 			const head = await Session.remoteHead(await this.remote());
 			this.lastCheck = Date.now();
