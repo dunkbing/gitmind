@@ -21,6 +21,7 @@ import { checkSecrets } from "../engine/secrets";
 import { ConflictError, type FileChange, Session } from "../repo/git";
 import { remoteFor, repoProvider } from "../repo/provider";
 import { buildContext, sessionContext } from "./context";
+import { type Embedder, embedderFor } from "./embed";
 import { type Hit, type Query, Store } from "./store";
 
 export interface Actor {
@@ -68,10 +69,18 @@ export class Workspace extends DurableObject<Env> {
 	private session: Session | null = null;
 	private lastCheck = 0;
 	private queue: Promise<unknown> = Promise.resolve();
+	private embedder: Embedder | null;
+	private queryVectors = new Map<string, Float32Array>();
 
 	constructor(ctx: DurableObjectState, env: Env) {
 		super(ctx, env);
 		this.store = new Store(ctx.storage.sql);
+		this.embedder = embedderFor(env);
+		// A different model's vectors can't be compared: embed again.
+		if (this.embedder && this.store.meta("embed_model") !== this.embedder.id) {
+			this.store.clearVectors();
+			this.store.setMeta("embed_model", this.embedder.id);
+		}
 	}
 
 	// configure binds this object to its repository, creating the repository
@@ -91,7 +100,62 @@ export class Workspace extends DurableObject<Env> {
 
 	async search(q: Query): Promise<Hit[]> {
 		await this.fresh();
-		return this.store.search({ ...q, dir: q.dir ? cleanDir(q.dir) : "" });
+		const query = { ...q, dir: q.dir ? cleanDir(q.dir) : "" };
+		const vec = q.text?.trim() && q.mode !== "keyword" ? await this.queryVector(q.text.trim()) : null;
+		return this.store.search(query, vec ?? undefined);
+	}
+
+	// related lists the notes closest in meaning to a note.
+	async related(id: string, limit: number): Promise<Hit[]> {
+		await this.fresh();
+		if (!this.embedder) return [];
+		return this.store.related(this.resolve(id), limit, this.embedder.minScore + 0.1);
+	}
+
+	// queryVector embeds a search query, or returns null when semantic
+	// search isn't available (no embedder, nothing embedded yet, or the
+	// model failing), so search falls back to keywords.
+	private async queryVector(text: string): Promise<{ vec: Float32Array; minScore: number } | null> {
+		if (!this.embedder || !this.store.hasVectors()) return null;
+		let vec = this.queryVectors.get(text);
+		if (!vec) {
+			try {
+				[vec] = await this.embedder.embed([text]);
+			} catch (e) {
+				console.error("query embedding failed, searching by keyword", e);
+				return null;
+			}
+			if (this.queryVectors.size > 200) this.queryVectors.clear();
+			this.queryVectors.set(text, vec);
+		}
+		return { vec, minScore: this.embedder.minScore };
+	}
+
+	// alarm embeds passages that don't have vectors yet, in batches, after
+	// notes change. It runs in the background so writes never wait on it.
+	async alarm(): Promise<void> {
+		if (!this.embedder) return;
+		const deadline = Date.now() + 60_000;
+		while (Date.now() < deadline) {
+			const batch = this.store.pendingChunks(32);
+			if (!batch.length) return;
+			let vecs: Float32Array[];
+			try {
+				vecs = await this.embedder.embed(batch.map((c) => c.text));
+			} catch (e) {
+				console.error("embedding failed; retrying in a minute", e);
+				await this.ctx.storage.setAlarm(Date.now() + 60_000);
+				return;
+			}
+			this.store.setVectors(batch.map((c, i) => ({ id: c.id, hash: c.hash, vec: vecs[i] })));
+		}
+		await this.ctx.storage.setAlarm(Date.now() + 1000);
+	}
+
+	// embedLater schedules the alarm when there's something to embed.
+	private async embedLater() {
+		if (!this.embedder || this.store.pendingCount() === 0) return;
+		if ((await this.ctx.storage.getAlarm()) === null) await this.ctx.storage.setAlarm(Date.now() + 500);
 	}
 
 	async readNote(id: string): Promise<{ path: string; content: string; updated: number; backlinks: { title: string; path: string }[] }> {
@@ -392,6 +456,7 @@ export class Workspace extends DurableObject<Env> {
 			for (const path of known.keys()) if (!present.has(path)) this.store.remove(path);
 			this.store.setMeta("head", s.head ?? "");
 		});
+		await this.embedLater();
 	}
 
 	// mutate computes a change from the current notes, commits and pushes it,
@@ -429,6 +494,7 @@ export class Workspace extends DurableObject<Env> {
 					this.store.setMeta("head", s!.head ?? "");
 				});
 				this.lastCheck = now;
+				await this.embedLater();
 				return result;
 			}
 			throw new Error("too many concurrent changes to this workspace; try again");

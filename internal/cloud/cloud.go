@@ -5,6 +5,7 @@
 package cloud
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -292,7 +293,7 @@ type Me struct {
 
 func (c *Credentials) Me(ctx context.Context) (Me, error) {
 	var me Me
-	return me, c.api(ctx, http.MethodGet, "/mcp/api/me", &me)
+	return me, c.api(ctx, http.MethodGet, "/mcp/api/me", nil, &me)
 }
 
 type GitCredentials struct {
@@ -305,16 +306,58 @@ type GitCredentials struct {
 // GitCredentials gets a short-lived git token for the workspace's repository.
 func (c *Credentials) GitCredentials(ctx context.Context, slug string) (GitCredentials, error) {
 	var g GitCredentials
-	return g, c.api(ctx, http.MethodPost, "/mcp/api/workspaces/"+url.PathEscape(slug)+"/git-credentials", &g)
+	return g, c.api(ctx, http.MethodPost, "/mcp/api/workspaces/"+url.PathEscape(slug)+"/git-credentials", nil, &g)
 }
 
-func (c *Credentials) api(ctx context.Context, method, path string, out any) error {
+// SearchHit is a note found by the cloud's search.
+type SearchHit struct {
+	Path         string   `json:"path"`
+	Title        string   `json:"title"`
+	Tags         []string `json:"tags"`
+	Updated      int64    `json:"updated"` // ms since epoch
+	Summary      string   `json:"summary"`
+	Snippet      string   `json:"snippet"`
+	Pinned       bool     `json:"pinned"`
+	Observations []string `json:"observations"`
+}
+
+// SearchArgs are search_notes' arguments, as the cloud takes them.
+type SearchArgs struct {
+	Query     string   `json:"query,omitempty"`
+	Directory string   `json:"directory,omitempty"`
+	Tags      []string `json:"tags,omitempty"`
+	Category  string   `json:"category,omitempty"`
+	Since     string   `json:"since,omitempty"`
+	Before    string   `json:"before,omitempty"`
+	Limit     int      `json:"limit,omitempty"`
+	Mode      string   `json:"mode,omitempty"`
+}
+
+// Search searches the workspace on the server, which ranks by meaning as
+// well as keywords (the local index only has keywords).
+func (c *Credentials) Search(ctx context.Context, slug string, args SearchArgs) ([]SearchHit, error) {
+	var hits []SearchHit
+	return hits, c.api(ctx, http.MethodPost, "/mcp/api/workspaces/"+url.PathEscape(slug)+"/search", args, &hits)
+}
+
+func (c *Credentials) api(ctx context.Context, method, path string, in, out any) error {
 	if err := c.Fresh(ctx); err != nil {
 		return err
 	}
-	req, err := http.NewRequestWithContext(ctx, method, c.URL+path, nil)
+	var body io.Reader
+	if in != nil {
+		data, err := json.Marshal(in)
+		if err != nil {
+			return err
+		}
+		body = bytes.NewReader(data)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, c.URL+path, body)
 	if err != nil {
 		return err
+	}
+	if in != nil {
+		req.Header.Set("Content-Type", "application/json")
 	}
 	req.Header.Set("Authorization", "Bearer "+c.AccessToken)
 	resp, err := httpClient.Do(req)

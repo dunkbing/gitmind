@@ -155,7 +155,9 @@ line like `- depends on [[Auth service]]` records "depends on" as the relation.
 
 ## Limitations
 
-- Keyword search only, no embeddings yet.
+- The CLI's local index is keyword-only. When your notes sync with gitmind
+  cloud, `search_notes` adds the cloud's semantic matches (embeddings); with
+  GitHub-only sync, search is keyword-only.
 - "Updated" times come from git: the last commit touching a note, or the file
   time while it has uncommitted edits.
 

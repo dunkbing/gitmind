@@ -10,18 +10,19 @@ import { prefetch } from "../store";
 export function SearchView({ ws }: { ws: Workspace }) {
 	const url = useLocation();
 	const params = url.searchParams;
-	const [form, setForm] = useState({ q: params.get("q") ?? "", tag: params.get("tag") ?? "", category: params.get("category") ?? "", since: params.get("since") ?? "" });
+	const [form, setForm] = useState({ q: params.get("q") ?? "", tag: params.get("tag") ?? "", category: params.get("category") ?? "", since: params.get("since") ?? "", mode: params.get("mode") ?? "" });
 	const [hits, setHits] = useState<Hit[] | null>(null);
 	const [error, setError] = useState("");
-	const query = { q: params.get("q") ?? "", tag: params.get("tag") ?? "", category: params.get("category") ?? "", since: params.get("since") ?? "" };
-	const active = Object.values(query).some(Boolean);
+	const query = { q: params.get("q") ?? "", tag: params.get("tag") ?? "", category: params.get("category") ?? "", since: params.get("since") ?? "", mode: params.get("mode") ?? "" };
+	const active = Boolean(query.q || query.tag || query.category || query.since);
 
 	useEffect(() => setForm(query), [url.search]);
 
 	useEffect(() => {
 		if (!active) return setHits(null);
 		setError("");
-		const t = setTimeout(() => api.search(ws.slug, { ...query, limit: 50 }).then(setHits, (e) => setError(e.message)), 120);
+		const mode = query.mode === "keyword" ? "keyword" : "hybrid";
+		const t = setTimeout(() => api.search(ws.slug, { ...query, mode, limit: 50 }).then(setHits, (e) => setError(e.message)), 120);
 		return () => clearTimeout(t);
 	}, [ws.slug, url.search]);
 
@@ -40,6 +41,23 @@ export function SearchView({ ws }: { ws: Workspace }) {
 				<SearchIcon size={16} className="text-muted" />
 				<input autoFocus className="w-full bg-transparent py-2.5 text-[15px] outline-none" placeholder="Search notes" value={form.q} onChange={(e) => update({ q: e.target.value })} />
 			</div>
+			<div className="mt-2 flex items-center gap-1 text-[13px]" role="radiogroup" aria-label="Match">
+				{[
+					["", "By meaning and words", "Finds notes that say the same thing in other words, or another language"],
+					["keyword", "Exact words", "Only notes containing the words you typed"],
+				].map(([m, label, title]) => (
+					<button
+						key={m}
+						role="radio"
+						aria-checked={form.mode === m}
+						title={title}
+						onClick={() => update({ mode: m })}
+						className={`rounded-md px-2 py-1 ${form.mode === m ? "bg-accent-soft text-accent" : "text-muted hover:text-ink"}`}
+					>
+						{label}
+					</button>
+				))}
+			</div>
 			<div className="mt-2 grid grid-cols-3 gap-2">
 				<input className="field text-[13px]" placeholder="#tag" value={form.tag} onChange={(e) => update({ tag: e.target.value.replace(/^#/, "") })} />
 				<input className="field text-[13px]" placeholder="category, e.g. decision" value={form.category} onChange={(e) => update({ category: e.target.value })} />
@@ -47,7 +65,11 @@ export function SearchView({ ws }: { ws: Workspace }) {
 			</div>
 
 			{error && <p className="mt-6 text-danger">{error}</p>}
-			{!active && <p className="mt-8 text-[14px] text-muted">Search words in titles and text. Filter by tag, by observation category (decision, preference, gotcha…) or by date.</p>}
+			{!active && (
+				<p className="mt-8 text-[14px] text-muted">
+					Search finds notes by meaning as well as by their words, so "how do we ship" finds a note about the deploy script. Filter by tag, by observation category (decision, preference, gotcha…) or by date.
+				</p>
+			)}
 			{hits && hits.length === 0 && <p className="mt-8 text-muted">No notes match.</p>}
 			<ul className="mt-6 divide-y divide-line">
 				{hits?.map((h) => (

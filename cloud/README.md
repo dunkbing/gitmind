@@ -16,6 +16,11 @@ that your laptops' gitmind CLI syncs with.
   live preview (CodeMirror), autosave, `[[link]]` completion, a folder tree,
   a ⌘K palette, backlinks and outline, search with tag, category and date
   filters, a link graph, the change history, import and export.
+- **Semantic search**: notes are split into passages and embedded with
+  Workers AI (`@cf/baai/bge-m3`, multilingual) in the background after each
+  change; vectors live in the workspace's SQLite next to the FTS index (no
+  separate vector database) and search merges both rankings (reciprocal rank
+  fusion). Related notes in the app come from the same vectors.
 - **Import** Claude and ChatGPT data exports, or a zip of Markdown notes.
 - **Teams**: shared workspaces with invite links and owner/admin/member roles.
 - **Your data is git**: every workspace is a git repository (on Cloudflare

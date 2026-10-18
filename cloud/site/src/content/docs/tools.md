@@ -10,7 +10,7 @@ take an optional `workspace` (a team's slug).
 
 | Tool | What it does |
 | --- | --- |
-| `search_notes` | Full-text search (best matches first, notes with every word first, recent notes slightly favoured), filterable by `directory`, `tags`, `category`, `since` (`7d`, `2w`, `2026-10-01`) and `before`. With a category filter, the matching lines are shown. |
+| `search_notes` | Search by meaning and keywords together (`mode`: `hybrid`, the default; `keyword`; or `semantic`; meaning needs gitmind cloud), filterable by `directory`, `tags`, `category`, `since` (`7d`, `2w`, `2026-10-01`) and `before`. With a category filter, the matching lines are shown. |
 | `read_note` | A note in full, with the notes linking to it. |
 | `build_context` | A note plus the notes it links to and from, with a one-line summary of each, and links to notes not written yet. `depth: 2` goes one step further. |
 | `project_context` | Pinned notes in full, plus an index of a project's notes, general notes and recent activity. For the start of a session. |

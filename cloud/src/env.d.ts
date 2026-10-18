@@ -13,6 +13,9 @@ declare global {
 		DEV_GIT_BASE?: string;
 		DEV_LOGIN?: string;
 		FRESHNESS_MS?: string;
+		// Tests and local development: semantic search with a simple local
+		// embedding instead of Workers AI.
+		DEV_EMBEDDINGS?: string;
 		OAUTH_PROVIDER: OAuthHelpers;
 	}
 }

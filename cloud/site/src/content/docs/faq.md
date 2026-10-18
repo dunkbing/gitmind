@@ -74,9 +74,16 @@ conversations: agents send it only what they choose to save or search. See
 
 ## Does it use semantic or vector search?
 
-No. Search is full-text keyword search with ranking (best matches first, then
-recent notes), filterable by folder, tag, category and date. Agents usually
-search with a few likely words, and notes link to each other for context.
+Yes, in gitmind cloud. Search ranks notes by meaning and by keywords together,
+so "how do we ship" finds a note about the deploy script, in any language.
+gitmind.app embeds each note's passages with Cloudflare Workers AI (the
+multilingual bge-m3 model) when it changes, and keeps the vectors next to the
+keyword index: an index you can rebuild, never stored in your git repository.
+Filters by folder, tag, category and date apply to both.
+
+The CLI searches its local clone by keyword, and adds the cloud's semantic
+matches when your notes sync with gitmind cloud. With GitHub-only sync, search
+is keyword-only.
 
 ## Does it work offline?
 

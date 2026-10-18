@@ -138,8 +138,15 @@ appApi.get("/w/:slug/search", async (c) => {
 		category: q.category ?? "",
 		since: parseWhen(q.since ?? "", Date.now()),
 		limit: Math.min(100, Number(q.limit) || 30),
+		mode: q.mode === "keyword" || q.mode === "semantic" ? q.mode : "hybrid",
 	});
 	return c.json(hits);
+});
+
+appApi.get("/w/:slug/related", async (c) => {
+	const ws = await workspace(c);
+	if (!ws) return noWorkspace(c);
+	return c.json(await workspaceStub(c.env, ws).related(c.req.query("path") ?? "", Math.min(20, Number(c.req.query("limit")) || 6)));
 });
 
 appApi.get("/w/:slug/graph", async (c) => {

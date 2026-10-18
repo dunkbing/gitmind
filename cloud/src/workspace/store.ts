@@ -14,8 +14,9 @@ import {
 	slugify,
 	summary,
 } from "../engine/notes";
+import { dot, hash, passages } from "./embed";
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -43,6 +44,9 @@ CREATE TABLE IF NOT EXISTS note_tags (note_id INTEGER NOT NULL, tag TEXT NOT NUL
 CREATE INDEX IF NOT EXISTS note_tags_tag ON note_tags (tag, note_id);
 CREATE TABLE IF NOT EXISTS observations (note_id INTEGER NOT NULL, category TEXT NOT NULL, text TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS observations_category ON observations (category, note_id);
+-- Passages for semantic search; vec is NULL until embedded.
+CREATE TABLE IF NOT EXISTS chunks (id INTEGER PRIMARY KEY, note_id INTEGER NOT NULL, text TEXT NOT NULL, hash INTEGER NOT NULL, vec BLOB);
+CREATE INDEX IF NOT EXISTS chunks_note ON chunks (note_id);
 `;
 
 const RESOLVES = `(l.target_path = t.path OR (l.target_path = '' AND (l.target_slug = t.slug OR l.target_slug = t.title_slug)))`;
@@ -71,6 +75,9 @@ export interface Query {
 	since?: number; // ms
 	before?: number; // ms
 	limit?: number;
+	// "hybrid" (the default) ranks by keywords and meaning together when the
+	// workspace has embeddings; "keyword" and "semantic" use one of them.
+	mode?: "hybrid" | "keyword" | "semantic";
 }
 
 type Row = Record<string, SqlStorageValue>;
@@ -79,7 +86,7 @@ export class Store {
 	constructor(private sql: SqlStorage) {
 		const version = this.meta("schema_version");
 		if (version !== String(SCHEMA_VERSION)) {
-			for (const t of ["observations", "note_tags", "links", "notes_fts", "notes"]) sql.exec(`DROP TABLE IF EXISTS ${t}`);
+			for (const t of ["chunks", "observations", "note_tags", "links", "notes_fts", "notes"]) sql.exec(`DROP TABLE IF EXISTS ${t}`);
 			sql.exec(SCHEMA);
 			this.setMeta("schema_version", String(SCHEMA_VERSION));
 			this.setMeta("head", "");
@@ -120,6 +127,10 @@ export class Store {
 		const tags = allTags.join(" ");
 		const slug = slugify(path.slice(path.lastIndexOf("/") + 1).replace(/\.md$/, ""));
 		const existing = this.sql.exec(`SELECT id FROM notes WHERE path = ?`, path).toArray();
+		// Passages whose text didn't change keep their vectors.
+		const kept = new Map<number, ArrayBuffer>();
+		if (existing.length)
+			for (const r of this.sql.exec(`SELECT hash, vec FROM chunks WHERE note_id = ? AND vec IS NOT NULL`, existing[0].id)) kept.set(Number(r.hash), r.vec as ArrayBuffer);
 		let id: number;
 		if (existing.length) {
 			id = Number(existing[0].id);
@@ -145,6 +156,11 @@ export class Store {
 		}
 		for (const t of allTags) this.sql.exec(`INSERT INTO note_tags (note_id, tag) VALUES (?, ?)`, id, t);
 		for (const o of observations(n.body)) this.sql.exec(`INSERT INTO observations (note_id, category, text) VALUES (?, ?, ?)`, id, o.category, o.text);
+		for (const text of passages(n)) {
+			const h = hash(text);
+			this.sql.exec(`INSERT INTO chunks (note_id, text, hash, vec) VALUES (?, ?, ?, ?)`, id, text, h, kept.get(h) ?? null);
+		}
+		this.vectors = null;
 	}
 
 	remove(path: string) {
@@ -160,6 +176,95 @@ export class Store {
 		this.sql.exec(`DELETE FROM links WHERE source_id = ?`, id);
 		this.sql.exec(`DELETE FROM note_tags WHERE note_id = ?`, id);
 		this.sql.exec(`DELETE FROM observations WHERE note_id = ?`, id);
+		this.sql.exec(`DELETE FROM chunks WHERE note_id = ?`, id);
+		this.vectors = null;
+	}
+
+	// ---- embeddings ----------------------------------------------------------
+
+	// Every embedded passage, loaded once and kept until notes change.
+	private vectors: { noteId: number; chunkId: number; vec: Float32Array }[] | null = null;
+
+	private loadVectors() {
+		this.vectors ??= this.sql
+			.exec(`SELECT id, note_id, vec FROM chunks WHERE vec IS NOT NULL`)
+			.toArray()
+			.map((r) => ({ chunkId: Number(r.id), noteId: Number(r.note_id), vec: new Float32Array(r.vec as ArrayBuffer) }));
+		return this.vectors;
+	}
+
+	hasVectors(): boolean {
+		return this.sql.exec(`SELECT 1 FROM chunks WHERE vec IS NOT NULL LIMIT 1`).toArray().length > 0;
+	}
+
+	pendingCount(): number {
+		return Number(this.sql.exec(`SELECT count(*) AS c FROM chunks WHERE vec IS NULL`).one().c);
+	}
+
+	pendingChunks(limit: number): { id: number; hash: number; text: string }[] {
+		return this.sql
+			.exec(`SELECT id, hash, text FROM chunks WHERE vec IS NULL ORDER BY id LIMIT ?`, limit)
+			.toArray()
+			.map((r) => ({ id: Number(r.id), hash: Number(r.hash), text: String(r.text) }));
+	}
+
+	// setVectors stores embeddings, skipping passages that changed meanwhile.
+	setVectors(items: { id: number; hash: number; vec: Float32Array }[]) {
+		for (const it of items) {
+			const buf = it.vec.buffer.slice(it.vec.byteOffset, it.vec.byteOffset + it.vec.byteLength);
+			this.sql.exec(`UPDATE chunks SET vec = ? WHERE id = ? AND hash = ?`, buf, it.id, it.hash);
+		}
+		this.vectors = null;
+	}
+
+	clearVectors() {
+		this.sql.exec(`UPDATE chunks SET vec = NULL`);
+		this.vectors = null;
+	}
+
+	// semantic ranks notes by their closest passage to the query vector.
+	private semantic(vec: Float32Array, q: Query, limit: number, minScore: number): (Hit & { score: number })[] {
+		const [filter, args] = filterSQL(q);
+		const allowed = filter ? new Set(this.sql.exec(`SELECT n.id FROM notes n WHERE 1 = 1${filter}`, ...args).toArray().map((r) => Number(r.id))) : null;
+		const best = new Map<number, { score: number; chunkId: number }>();
+		for (const v of this.loadVectors()) {
+			if (allowed && !allowed.has(v.noteId)) continue;
+			if (v.vec.length !== vec.length) continue;
+			const score = dot(v.vec, vec);
+			if (score < minScore) continue;
+			const b = best.get(v.noteId);
+			if (!b || score > b.score) best.set(v.noteId, { score, chunkId: v.chunkId });
+		}
+		const top = [...best].sort((a, b) => b[1].score - a[1].score).slice(0, limit);
+		const out: (Hit & { score: number })[] = [];
+		for (const [noteId, { score, chunkId }] of top) {
+			const row = this.sql.exec(`SELECT ${HIT_COLUMNS}, c.text AS snippet FROM notes n JOIN chunks c ON c.id = ? WHERE n.id = ?`, chunkId, noteId).toArray()[0];
+			if (!row) continue;
+			const hit = toHit(row);
+			// The passage, without the title line the index prefixed it with.
+			hit.snippet = hit.snippet.slice(hit.snippet.indexOf("\n") + 1).replace(/\s+/g, " ").slice(0, 240);
+			out.push({ ...hit, score });
+		}
+		return out;
+	}
+
+	// related finds the notes closest in meaning to a note: by the average of
+	// its passages' vectors.
+	related(path: string, limit: number, minScore: number): Hit[] {
+		const id = this.sql.exec(`SELECT id FROM notes WHERE path = ?`, path).toArray()[0]?.id;
+		if (id === undefined) return [];
+		const own = this.loadVectors().filter((v) => v.noteId === Number(id));
+		if (!own.length) return [];
+		const mean = new Float32Array(own[0].vec.length);
+		for (const v of own) for (let i = 0; i < mean.length; i++) mean[i] += v.vec[i];
+		let n = 0;
+		for (const x of mean) n += x * x;
+		n = Math.sqrt(n) || 1;
+		for (let i = 0; i < mean.length; i++) mean[i] /= n;
+		return this.semantic(mean, {}, limit + 1, minScore)
+			.filter((h) => h.path !== path)
+			.slice(0, limit)
+			.map(({ score: _, ...h }) => h);
 	}
 
 	count(): number {
@@ -169,22 +274,34 @@ export class Store {
 	// search: with text, notes with every word first (BM25 weighted title >
 	// tags > body, nudged towards recent notes), then notes with some words;
 	// without text, matching notes newest first.
-	search(q: Query): Hit[] {
+	//
+	// With a query vector (hybrid search), the keyword and semantic rankings
+	// are merged by reciprocal rank fusion: a note ranked well by either
+	// comes first, one ranked well by both comes before it.
+	search(q: Query, vec?: { vec: Float32Array; minScore: number }): Hit[] {
 		const limit = q.limit && q.limit > 0 ? Math.min(q.limit, 100) : 10;
 		const [filter, args] = filterSQL(q);
 		const terms = ftsTerms(q.text ?? "");
 		let hits: Hit[];
-		if (terms.length === 0) {
+		if (vec && terms.length > 0) {
+			const keyword = q.mode === "semantic" ? [] : this.keyword(terms, filter, args, limit * 2);
+			const semantic = this.semantic(vec.vec, q, limit * 2, vec.minScore);
+			const score = new Map<string, number>();
+			const byPath = new Map<string, Hit>();
+			const K = 60;
+			keyword.forEach((h, i) => {
+				score.set(h.path, (score.get(h.path) ?? 0) + 1 / (K + i));
+				byPath.set(h.path, h);
+			});
+			semantic.forEach(({ score: _, ...h }, i) => {
+				score.set(h.path, (score.get(h.path) ?? 0) + 1 / (K + i));
+				if (!byPath.has(h.path)) byPath.set(h.path, h);
+			});
+			hits = [...score].sort((a, b) => b[1] - a[1]).slice(0, limit).map(([p]) => byPath.get(p)!);
+		} else if (terms.length === 0) {
 			hits = this.query(`SELECT ${HIT_COLUMNS}, '' AS snippet FROM notes n WHERE 1 = 1${filter} ORDER BY n.updated DESC LIMIT ?`, ...args, limit);
 		} else {
-			hits = this.fts(terms.join(" "), filter, args, limit);
-			if (terms.length > 1 && hits.length < limit) {
-				const seen = new Set(hits.map((h) => h.path));
-				for (const h of this.fts(terms.join(" OR "), filter, args, limit)) {
-					if (hits.length >= limit) break;
-					if (!seen.has(h.path)) hits.push(h);
-				}
-			}
+			hits = this.keyword(terms, filter, args, limit);
 		}
 		const category = q.category?.trim().toLowerCase();
 		if (category) {
@@ -193,6 +310,19 @@ export class Store {
 					.exec(`SELECT o.text FROM observations o JOIN notes n ON n.id = o.note_id WHERE n.path = ? AND o.category = ? ORDER BY o.rowid`, h.path, category)
 					.toArray()
 					.map((r) => String(r.text));
+			}
+		}
+		return hits;
+	}
+
+	// keyword: notes with every word first, then notes with some words.
+	private keyword(terms: string[], filter: string, args: SqlStorageValue[], limit: number): Hit[] {
+		const hits = this.fts(terms.join(" "), filter, args, limit);
+		if (terms.length > 1 && hits.length < limit) {
+			const seen = new Set(hits.map((h) => h.path));
+			for (const h of this.fts(terms.join(" OR "), filter, args, limit)) {
+				if (hits.length >= limit) break;
+				if (!seen.has(h.path)) hits.push(h);
 			}
 		}
 		return hits;

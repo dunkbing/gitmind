@@ -11,7 +11,7 @@ import { ApiError, type NoteData, type Workspace, api } from "../api";
 import { Editor, type Mode } from "../editor/Editor";
 import { ago, dirOf, resolver } from "../notes";
 import { Link, navigate, noteUrl, useLocation, wsUrl } from "../router";
-import { cachedNote, forgetNote, loadNote, loadNotes, patchNotes, storeNote, toast, useStore } from "../store";
+import { cachedNote, forgetNote, loadNote, loadNotes, patchNotes, prefetch, storeNote, toast, useStore } from "../store";
 
 type Status = "saved" | "dirty" | "saving" | "error";
 
@@ -333,6 +333,17 @@ function NoteEditor({ ws, initial, onMoved }: { ws: Workspace; initial: NoteData
 		return out;
 	}, [body]);
 
+	// Notes close in meaning, from the server's embeddings.
+	const [related, setRelated] = useState<{ path: string; title: string }[] | null>(null);
+	useEffect(() => {
+		if (!panel) return;
+		let stop = false;
+		api.related(ws.slug, path).then((r) => !stop && setRelated(r), () => !stop && setRelated([]));
+		return () => {
+			stop = true;
+		};
+	}, [ws.slug, path, panel, initial.hash]);
+
 	const titleOf = (p: string) => notes.find((n) => n.path === p)?.title ?? p;
 	const crumbs = dirOf(path).split("/").filter(Boolean);
 
@@ -505,7 +516,7 @@ function NoteEditor({ ws, initial, onMoved }: { ws: Workspace; initial: NoteData
 							),
 						)}
 					</section>
-					<section>
+					<section className="mb-6">
 						<div className="label mb-2">Backlinks ({initial.backlinks.length})</div>
 						{initial.backlinks.length === 0 && <p className="text-[13px] text-muted">No notes link here.</p>}
 						{initial.backlinks.map((b) => (
@@ -514,6 +525,18 @@ function NoteEditor({ ws, initial, onMoved }: { ws: Workspace; initial: NoteData
 							</Link>
 						))}
 					</section>
+					{related && related.length > 0 && (
+						<section>
+							<div className="label mb-2" title="Notes about similar things, found by meaning">
+								Related
+							</div>
+							{related.map((r) => (
+								<Link key={r.path} href={noteUrl(ws.slug, r.path)} onMouseEnter={() => prefetch(ws.slug, r.path)} className="block truncate rounded px-1.5 py-0.5 text-[13px] text-ink no-underline hover:bg-accent-soft/60">
+									{r.title}
+								</Link>
+							))}
+						</section>
+					)}
 				</aside>
 			)}
 

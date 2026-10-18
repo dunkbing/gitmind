@@ -4,6 +4,7 @@ package server
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -32,6 +33,28 @@ type searchArgs struct {
 	Since     string   `json:"since,omitempty" jsonschema:"only notes updated on or after this date (YYYY-MM-DD) or within this period (e.g. 7d, 2w, 3m, 1y)"`
 	Before    string   `json:"before,omitempty" jsonschema:"only notes last updated before this date (YYYY-MM-DD)"`
 	Limit     int      `json:"limit,omitempty" jsonschema:"maximum number of results (default 10)"`
+	Mode      string   `json:"mode,omitempty" jsonschema:"hybrid (default): by meaning and keywords, when semantic search is available; keyword: exact words only; semantic: meaning only"`
+}
+
+// RemoteSearch searches the same notes on a gitmind server, which ranks by
+// meaning (embeddings) as well as keywords.
+type RemoteSearch func(ctx context.Context, in searchArgs) ([]index.Hit, error)
+
+// Option configures the server.
+type Option func(*options)
+
+type options struct {
+	remote RemoteSearch
+}
+
+// WithRemoteSearch adds semantic search through a gitmind server that has
+// the same notes. Without it (or when it fails) search uses keywords only.
+func WithRemoteSearch(f func(ctx context.Context, query, directory string, tags []string, category, since, before string, limit int, mode string) ([]index.Hit, error)) Option {
+	return func(o *options) {
+		o.remote = func(ctx context.Context, in searchArgs) ([]index.Hit, error) {
+			return f(ctx, in.Query, in.Directory, in.Tags, in.Category, in.Since, in.Before, in.Limit, in.Mode)
+		}
+	}
 }
 
 type readArgs struct {
@@ -86,19 +109,22 @@ type listArgs struct {
 
 type noArgs struct{}
 
-func New(app *memory.App, version string) *mcp.Server {
+func New(app *memory.App, version string, opts ...Option) *mcp.Server {
+	var o options
+	for _, opt := range opts {
+		opt(&o)
+	}
 	s := mcp.NewServer(&mcp.Implementation{Name: "gitmind", Version: version}, &mcp.ServerOptions{Instructions: instructions})
 
 	mcp.AddTool(s, &mcp.Tool{
-		Name: "search_notes",
-		Description: "Search memory notes. Full-text query (notes with all words first, then some, recent notes slightly favoured) " +
-			"and/or filters by directory, tags, observation category and update date. With filters only, the newest matches come first.",
+		Name:        "search_notes",
+		Description: searchDescription(o.remote != nil),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in searchArgs) (*mcp.CallToolResult, any, error) {
 		q, err := toQuery(in, time.Now())
 		if err != nil {
 			return nil, nil, err
 		}
-		hits, err := app.Index.Search(q)
+		hits, err := search(ctx, app, o.remote, in, q)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -372,4 +398,92 @@ func limit(n, def int) int {
 		return def
 	}
 	return min(n, 100)
+}
+
+func searchDescription(semantic bool) string {
+	if semantic {
+		return "Search memory notes by meaning and keywords together: a query finds notes that say the same thing in other words " +
+			"(or another language) as well as notes containing its words. Combine with filters by directory, tags, observation " +
+			"category and update date. With filters only, the newest matches come first."
+	}
+	return "Search memory notes. Full-text query (notes with all words first, then some, recent notes slightly favoured) " +
+		"and/or filters by directory, tags, observation category and update date. With filters only, the newest matches come first."
+}
+
+// search runs the local keyword search and, when a server with the same
+// notes is available, its semantic search, merging the two by reciprocal
+// rank fusion. The local index stays authoritative: notes the server has
+// but this machine doesn't (deleted here, not yet pushed) are left out, and
+// any failure of the server falls back to keywords alone.
+func search(ctx context.Context, app *memory.App, remote RemoteSearch, in searchArgs, q index.Query) ([]index.Hit, error) {
+	if remote == nil || strings.TrimSpace(in.Query) == "" || in.Mode == "keyword" {
+		return app.Index.Search(q)
+	}
+	type result struct {
+		hits []index.Hit
+		err  error
+	}
+	ch := make(chan result, 1)
+	rctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	go func() {
+		args := in
+		args.Limit = q.Limit * 2
+		hits, err := remote(rctx, args)
+		ch <- result{hits, err}
+	}()
+	var local []index.Hit
+	if in.Mode != "semantic" {
+		wide := q
+		wide.Limit = q.Limit * 2
+		var err error
+		if local, err = app.Index.Search(wide); err != nil {
+			return nil, err
+		}
+	}
+	r := <-ch
+	if r.err != nil {
+		if app.Log != nil {
+			app.Log.Printf("semantic search unavailable, using keywords: %v", r.err)
+		}
+		if in.Mode == "semantic" {
+			return app.Index.Search(q)
+		}
+		if len(local) > q.Limit {
+			local = local[:q.Limit]
+		}
+		return local, nil
+	}
+	const k = 60.0
+	score := map[string]float64{}
+	byPath := map[string]index.Hit{}
+	var order []string
+	add := func(hits []index.Hit) {
+		for i, h := range hits {
+			if _, ok := score[h.Path]; !ok {
+				order = append(order, h.Path)
+			}
+			score[h.Path] += 1 / (k + float64(i))
+			if _, ok := byPath[h.Path]; !ok {
+				byPath[h.Path] = h
+			}
+		}
+	}
+	add(local)
+	var cloud []index.Hit
+	for _, h := range r.hits {
+		if app.Store.Exists(h.Path) {
+			cloud = append(cloud, h)
+		}
+	}
+	add(cloud)
+	sort.SliceStable(order, func(i, j int) bool { return score[order[i]] > score[order[j]] })
+	if len(order) > q.Limit {
+		order = order[:q.Limit]
+	}
+	out := make([]index.Hit, len(order))
+	for i, p := range order {
+		out[i] = byPath[p]
+	}
+	return out, nil
 }

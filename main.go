@@ -188,7 +188,35 @@ func serve(ctx context.Context, dir string, interval time.Duration) error {
 	}
 	defer app.Close()
 	app.StartAutoSync(interval)
-	return server.New(app, version).Run(ctx, &mcp.StdioTransport{})
+	var opts []server.Option
+	if remote := cloudSearch(ctx, dir); remote != nil {
+		opts = append(opts, server.WithRemoteSearch(remote))
+	}
+	return server.New(app, version, opts...).Run(ctx, &mcp.StdioTransport{})
+}
+
+// cloudSearch returns semantic search through gitmind cloud when the notes
+// repository syncs with a cloud workspace this machine is signed in to.
+func cloudSearch(ctx context.Context, dir string) func(ctx context.Context, query, directory string, tags []string, category, since, before string, limit int, mode string) ([]index.Hit, error) {
+	c, err := cloud.Load()
+	if err != nil || c.GitURL == "" || c.Workspace == "" {
+		return nil
+	}
+	trim := func(u string) string { return strings.TrimSuffix(strings.TrimRight(u, "/"), ".git") }
+	if trim((&gitsync.Repo{Dir: dir}).Remote(ctx)) != trim(c.GitURL) {
+		return nil
+	}
+	return func(ctx context.Context, query, directory string, tags []string, category, since, before string, limit int, mode string) ([]index.Hit, error) {
+		hits, err := c.Search(ctx, c.Workspace, cloud.SearchArgs{Query: query, Directory: directory, Tags: tags, Category: category, Since: since, Before: before, Limit: limit, Mode: mode})
+		if err != nil {
+			return nil, err
+		}
+		out := make([]index.Hit, len(hits))
+		for i, h := range hits {
+			out[i] = index.Hit{Path: h.Path, Title: h.Title, Tags: h.Tags, Modified: time.UnixMilli(h.Updated), Summary: h.Summary, Snippet: h.Snippet, Pinned: h.Pinned, Observations: h.Observations}
+		}
+		return out, nil
+	}
 }
 
 // sessionContext prints the project's memory for a SessionStart hook. It

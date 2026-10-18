@@ -109,8 +109,9 @@ export const api = {
 		call<{ path: string; updated: string[] }>("POST", `${w(slug)}/move`, { path, directory, title }),
 	pin: (slug: string, path: string, pinned: boolean) => call<{ path: string }>("POST", `${w(slug)}/pin`, { path, pinned }),
 	remove: (slug: string, path: string) => call<{ path: string }>("DELETE", `${w(slug)}/note?${qs({ path })}`),
-	search: (slug: string, q: { q?: string; tag?: string; category?: string; since?: string; limit?: number }) =>
+	search: (slug: string, q: { q?: string; tag?: string; category?: string; since?: string; limit?: number; mode?: "hybrid" | "keyword" | "semantic" }) =>
 		call<Hit[]>("GET", `${w(slug)}/search?${qs(Object.fromEntries(Object.entries(q).filter(([, v]) => v).map(([k, v]) => [k, String(v)])))}`),
+	related: (slug: string, path: string) => call<Hit[]>("GET", `${w(slug)}/related?${qs({ path })}`),
 	graph: (slug: string) => call<Graph>("GET", `${w(slug)}/graph`),
 	history: (slug: string) => call<Commit[]>("GET", `${w(slug)}/history`),
 	importFile: (slug: string, file: File) => {

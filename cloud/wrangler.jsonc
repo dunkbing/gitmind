@@ -32,6 +32,8 @@
 	"d1_databases": [{ "binding": "DB", "database_name": "gitmind", "migrations_dir": "migrations" }],
 	"kv_namespaces": [{ "binding": "OAUTH_KV" }],
 	"artifacts": [{ "binding": "ARTIFACTS", "namespace": "gitmind" }],
+	// Workers AI, for the embeddings behind semantic search (bge-m3).
+	"ai": { "binding": "AI" },
 
 	"routes": [{ "pattern": "gitmind.app", "custom_domain": true }]
 }

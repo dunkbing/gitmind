@@ -24,6 +24,7 @@ export default defineConfig(async () => {
 									DEV_GIT_BASE: "http://127.0.0.1:18765",
 									DEV_LOGIN: "1",
 									FRESHNESS_MS: "0",
+									DEV_EMBEDDINGS: "1",
 									TEST_MIGRATIONS: migrations,
 								},
 							},

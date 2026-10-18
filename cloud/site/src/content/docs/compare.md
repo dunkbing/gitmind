@@ -76,8 +76,9 @@ gitmind is aimed at people using AI apps and coding agents, not at building
 them. It runs no LLM of its own: the agent you already use decides what to
 save, and gitmind stores, indexes and syncs it, so there are no extra API keys
 and nothing sits between you and your AI provider. Notes are readable Markdown
-rather than vectors. The trade-off is that search is keyword-based (full-text
-with ranking), not semantic.
+rather than vectors. Search combines keywords with meaning: gitmind cloud
+embeds notes (with Cloudflare Workers AI) and keeps the vectors as a
+rebuildable index beside the notes, never in place of them.
 
 ## When to choose something else
 

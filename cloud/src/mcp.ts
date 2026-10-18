@@ -66,8 +66,9 @@ function createServer(version: string): McpServer {
 		"search_notes",
 		{
 			description:
-				"Search memory notes. Full-text query (notes with all words first, then some, recent notes slightly favoured) " +
-				"and/or filters by directory, tags, observation category and update date. With filters only, the newest matches come first.",
+				"Search memory notes by meaning and keywords together: a query finds notes that say the same thing in other words " +
+				"(or another language) as well as notes containing its words. Combine with filters by directory, tags, observation " +
+				"category and update date. With filters only, the newest matches come first.",
 			inputSchema: {
 				query: z.string().optional().describe("words to look for in titles, tags and bodies; may be omitted when filtering"),
 				directory: z.string().optional().describe("only notes under this directory, e.g. a project name"),
@@ -76,12 +77,13 @@ function createServer(version: string): McpServer {
 				since: z.string().optional().describe("only notes updated on or after this date (YYYY-MM-DD) or within this period (e.g. 7d, 2w, 3m, 1y)"),
 				before: z.string().optional().describe("only notes last updated before this date (YYYY-MM-DD)"),
 				limit: z.number().int().optional().describe("maximum number of results (default 10)"),
+				mode: z.enum(["hybrid", "keyword", "semantic"]).optional().describe("hybrid (default): meaning and keywords; keyword: exact words only; semantic: meaning only"),
 				workspace: workspaceArg,
 			},
 		},
 		async (a) => {
 			const { stub } = await ctx(env(), a.workspace);
-			const q = toQuery(a, Date.now());
+			const q = { ...toQuery(a, Date.now()), mode: a.mode };
 			return text(formatHits("No notes match.", await stub.search(q)));
 		},
 	);
