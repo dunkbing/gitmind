@@ -23,7 +23,7 @@ base="https://github.com/$repo/releases/latest/download"
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
-echo "Downloading $asset…"
+echo "Downloading ${asset}..."
 curl -fsSL "$base/$asset" -o "$tmp/$asset"
 curl -fsSL "$base/checksums.txt" -o "$tmp/checksums.txt"
 (
