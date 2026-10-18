@@ -33,10 +33,11 @@ go install github.com/dunkbing/gitmind@latest
 gitmind setup
 ```
 
-`setup` signs you in to [gitmind.app](https://gitmind.app) through your
-browser (over SSH it prints the link, and you paste back the address your
-browser ends up on), then clones your personal workspace into `~/.gitmind`.
-Run the same command on every machine. Git authentication is handled by
+`setup` asks where to keep your notes: [gitmind.app](https://gitmind.app),
+a private GitHub repository, a self-hosted server, or this computer only. For
+gitmind.app it signs you in through your browser (over SSH it prints the link,
+and you paste back the address your browser ends up on), then clones your
+personal workspace into `~/.gitmind`. Run the same command on every machine. Git authentication is handled by
 gitmind itself, registered as git's credential helper for that repository only.
 
 - `--workspace SLUG`: a team workspace.
@@ -44,7 +45,10 @@ gitmind itself, registered as git's credential helper for that repository only.
 - `--github`: no server; sync with a private `gitmind-notes` repository on your
   GitHub account (`--repo NAME` or `OWNER/NAME` picks another, and
   `gitmind auth status|logout` manages that login).
+- `--local`: this computer only, no sync.
 - `gitmind init <git-url>`: any git remote, with your existing git credentials.
+
+These flags skip the question; without a terminal, setup uses gitmind.app.
 
 ### Claude Code
 

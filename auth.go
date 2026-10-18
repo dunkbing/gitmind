@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"flag"
@@ -75,7 +74,9 @@ func login(ctx context.Context) (github.Credentials, error) {
 	fmt.Printf("! Your one-time code: %s%s\n", dc.UserCode, copied)
 	if github.CanOpenBrowser() {
 		fmt.Printf("Press Enter to open %s in your browser...", dc.VerificationURI)
-		bufio.NewReader(os.Stdin).ReadString('\n')
+		if _, err := readLine(ctx, stdin); err != nil {
+			return github.Credentials{}, err
+		}
 		if err := github.OpenBrowser(dc.VerificationURI); err != nil {
 			fmt.Printf("Couldn't open a browser; open %s yourself.\n", dc.VerificationURI)
 		}
@@ -107,10 +108,46 @@ func setupCmd(ctx context.Context, dir string, args []string) error {
 	server := fs.String("server", defaultServer(), "gitmind server to sync with; set it for a self-hosted server")
 	workspace := fs.String("workspace", "", "workspace to sync (default: your personal one)")
 	useGitHub := fs.Bool("github", false, "sync with a repository on your GitHub account instead of a gitmind server")
+	local := fs.Bool("local", false, "keep notes on this computer only, without syncing")
 	name := fs.String("repo", "gitmind-notes", "with --github: NAME under your account, or OWNER/NAME")
 	public := fs.Bool("public", false, "with --github: create the repository as public (default private)")
 	fs.Parse(args)
-	if !*useGitHub {
+
+	// Flags decide; otherwise ask in a terminal, and default to the cloud in
+	// scripts.
+	provider := providerCloud
+	serverSet := false
+	fs.Visit(func(f *flag.Flag) { serverSet = serverSet || f.Name == "server" })
+	switch {
+	case *local:
+		provider = providerLocal
+	case *useGitHub:
+		provider = providerGitHub
+	case serverSet:
+		provider = providerServer
+	case isTerminal():
+		p, u, err := chooseProvider(ctx, stdin, os.Stdout)
+		if err != nil {
+			return err
+		}
+		provider = p
+		if u != "" {
+			*server = u
+		}
+	}
+	switch provider {
+	case providerLocal:
+		if !gitsync.IsRepo(dir) {
+			if err := gitsync.Init(ctx, dir, ""); err != nil {
+				return err
+			}
+		}
+		fmt.Printf("✓ Notes are in %s, on this computer only.\n", dir)
+		fmt.Println("  Run `gitmind setup` again any time to start syncing them.")
+		return nil
+	case providerCloud:
+		return cloudSetup(ctx, dir, defaultServer(), *workspace)
+	case providerServer:
 		return cloudSetup(ctx, dir, *server, *workspace)
 	}
 
@@ -303,21 +340,14 @@ func cloudLogin(ctx context.Context, base string) (*cloud.Credentials, error) {
 		fmt.Printf("Open this link in a browser and approve gitmind:\n\n  %s\n\n", u)
 		fmt.Println("If the browser then fails to load a 127.0.0.1 page (e.g. over SSH), copy that page's full address and paste it here.")
 	}
-	var prompt *os.File
+	var prompt io.Reader
 	if !interactive {
-		prompt = os.Stdin
+		prompt = stdin
 	}
-	c, err := cloud.Login(ctx, base, open, readerOrNil(prompt))
+	c, err := cloud.Login(ctx, base, open, prompt)
 	if err != nil {
 		return nil, err
 	}
 	fmt.Println("✓ Signed in to", base)
 	return c, nil
-}
-
-func readerOrNil(f *os.File) io.Reader {
-	if f == nil {
-		return nil
-	}
-	return f
 }

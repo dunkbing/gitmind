@@ -17,16 +17,21 @@ go install github.com/dunkbing/gitmind@latest
 gitmind setup
 ```
 
-`setup` opens your browser to sign in to gitmind.app, then clones your
-personal workspace. Over SSH it prints the link; after approving, paste the
-address your browser ends up on back into the terminal.
+`setup` asks where to keep your notes:
 
-- `--workspace SLUG` syncs a team workspace instead.
-- `--server https://your-domain` connects to a [self-hosted](/docs/self-hosting/)
-  server (or set `GITMIND_SERVER`).
-- `--github` skips the server and syncs with a private `gitmind-notes`
-  repository on your GitHub account. Your notes then never leave GitHub, but
-  apps like claude.ai and ChatGPT can't reach them.
+1. **gitmind cloud** (gitmind.app): signs you in through your browser and
+   clones your workspace. Works with claude.ai, ChatGPT and mobile apps too.
+2. **GitHub**: a private `gitmind-notes` repository on your GitHub account.
+   Your notes never leave GitHub, but claude.ai and ChatGPT can't reach them.
+3. **A self-hosted server**: your own [gitmind deployment](/docs/self-hosting/).
+4. **This computer only**: no sync. Run `gitmind setup` again later to add it.
+
+Over SSH, sign-in prints a link; after approving, paste the address your
+browser ends up on back into the terminal. Ctrl+C cancels at any point.
+
+Flags skip the question, for scripts: `--server https://your-domain` (or set
+`GITMIND_SERVER`), `--github`, `--local`, and `--workspace SLUG` for a team
+workspace. Without a terminal, setup uses gitmind.app.
 
 ## Add it to your agents
 

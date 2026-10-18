@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -38,13 +39,15 @@ Usage:
   gitmind [--dir DIR] [--sync-interval 3m] [command] [args]
 
 Commands:
-  setup              sign in through your browser and sync the notes directory
-                     with your workspace on gitmind.app
+  setup              choose where to keep your notes (gitmind.app, GitHub, a
+                     self-hosted server, or this computer) and connect them
                        --server URL    a self-hosted gitmind server instead
                                        (or set GITMIND_SERVER)
                        --workspace S   a team workspace (default: personal)
                        --github        sync with a private repository on your
                                        GitHub account instead of a server
+                       --local         keep notes on this computer only
+                     Without these, setup asks where to keep the notes.
                        --repo NAME     with --github: NAME or OWNER/NAME
                                        (default gitmind-notes)
                        --public        with --github: create it public
@@ -84,6 +87,9 @@ func main() {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	// The first Ctrl+C cancels ctx so commands can stop cleanly; after that
+	// the default handling is back, so a second one always quits.
+	context.AfterFunc(ctx, stop)
 
 	var err error
 	switch cmd {
@@ -137,6 +143,10 @@ func main() {
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command %q\n\n%s", cmd, usage)
 		os.Exit(2)
+	}
+	if errors.Is(err, context.Canceled) {
+		fmt.Fprintln(os.Stderr)
+		os.Exit(130) // interrupted (Ctrl+C), like other CLIs
 	}
 	if err != nil {
 		log.Fatal(err)
