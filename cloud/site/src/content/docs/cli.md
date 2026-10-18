@@ -29,6 +29,12 @@ gitmind setup
 Over SSH, sign-in prints a link; after approving, paste the address your
 browser ends up on back into the terminal. Ctrl+C cancels at any point.
 
+To switch later (say from GitHub to gitmind cloud), run `gitmind setup` again
+and choose the new place. It offers to move your notes folder: the old folder
+is backed up as `~/.gitmind.bak-DATE`, and notes the new place doesn't have are
+copied over. If a note exists in both with different content, the old version
+is kept next to it as `NAME-previous.md`.
+
 Flags skip the question, for scripts: `--server https://your-domain` (or set
 `GITMIND_SERVER`), `--github`, `--local`, and `--workspace SLUG` for a team
 workspace. Without a terminal, setup uses gitmind.app.

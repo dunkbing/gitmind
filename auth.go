@@ -165,9 +165,9 @@ func setupNotes(ctx context.Context, dir string, args []string) (agentChoice, er
 		fmt.Println("  Run `gitmind setup` again any time to start syncing them.")
 		return choice, nil
 	case providerCloud:
-		return choice, cloudSetup(ctx, dir, defaultServer(), *workspace)
+		return choice, cloudSetup(ctx, dir, defaultServer(), *workspace, confirmer(ctx, *yes))
 	case providerServer:
-		return choice, cloudSetup(ctx, dir, *server, *workspace)
+		return choice, cloudSetup(ctx, dir, *server, *workspace, confirmer(ctx, *yes))
 	}
 
 	creds, err := github.LoadCredentials()
@@ -186,7 +186,7 @@ func setupNotes(ctx context.Context, dir string, args []string) (agentChoice, er
 	if err != nil {
 		return agentChoice{}, err
 	}
-	repo, created, err := connectRepo(ctx, github.New(clientID(), creds.Token), creds.Login, *name, !*public, dir, credentialHelperConfig(exe))
+	repo, created, err := connectRepo(ctx, github.New(clientID(), creds.Token), creds.Login, *name, !*public, dir, credentialHelperConfig(exe), confirmer(ctx, *yes))
 	if err != nil {
 		return agentChoice{}, err
 	}
@@ -204,7 +204,7 @@ func setupNotes(ctx context.Context, dir string, args []string) (agentChoice, er
 // connectRepo finds or creates the GitHub repository and makes dir a clone of
 // it that authenticates through gitmind. It reports whether the repository
 // was created.
-func connectRepo(ctx context.Context, gh *github.Client, login, name string, private bool, dir string, config []string) (github.Repo, bool, error) {
+func connectRepo(ctx context.Context, gh *github.Client, login, name string, private bool, dir string, config []string, confirm confirmFunc) (github.Repo, bool, error) {
 	full := name
 	if !strings.Contains(full, "/") {
 		full = login + "/" + name
@@ -225,19 +225,56 @@ func connectRepo(ctx context.Context, gh *github.Client, login, name string, pri
 		return repo, false, err
 	}
 
-	return repo, created, attachRepo(ctx, dir, repo.CloneURL, config)
+	return repo, created, attachRepo(ctx, dir, repo.CloneURL, config, confirm)
+}
+
+// confirmFunc asks the user a yes/no question.
+type confirmFunc func(question string) (bool, error)
+
+// confirmer asks on the terminal (default yes), answers yes with --yes, and
+// no when there's no terminal to ask on.
+func confirmer(ctx context.Context, assumeYes bool) confirmFunc {
+	return func(question string) (bool, error) {
+		if assumeYes {
+			return true, nil
+		}
+		if !isTerminal() {
+			return false, nil
+		}
+		for {
+			fmt.Printf("%s [Y/n] ", question)
+			answer, err := readLine(ctx, stdin)
+			if err != nil {
+				return false, err
+			}
+			switch strings.ToLower(answer) {
+			case "", "y", "yes":
+				return true, nil
+			case "n", "no":
+				return false, nil
+			}
+		}
+	}
 }
 
 // attachRepo makes dir a clone of remote, or points an existing notes
 // repository at it and merges the two, with config (a credential helper)
-// stored in the repository.
-func attachRepo(ctx context.Context, dir, remote string, config []string) error {
+// stored in the repository. A repository that already syncs with another
+// remote is switched over only if confirm agrees; see switchRepo.
+func attachRepo(ctx context.Context, dir, remote string, config []string, confirm confirmFunc) error {
 	if !gitsync.IsRepo(dir) {
 		return gitsync.Init(ctx, dir, remote, config...)
 	}
 	r := &gitsync.Repo{Dir: dir}
 	if current := r.Remote(ctx); current != "" && !sameRepoURL(current, remote) {
-		return fmt.Errorf("%s already syncs with %s; use --dir to set up a different directory", dir, current)
+		ok, err := confirm(fmt.Sprintf("%s already syncs with %s.\nSwitch it to the new location? Your notes are kept: the folder is backed up, and notes the new location doesn't have are copied over.", dir, displayRemote(current)))
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return fmt.Errorf("%s already syncs with %s; run setup again and choose to switch, or use --dir for a separate notes folder", dir, displayRemote(current))
+		}
+		return switchRepo(ctx, dir, remote, config)
 	}
 	if err := r.SetRemote(ctx, remote); err != nil {
 		return err
@@ -291,7 +328,7 @@ func defaultServer() string {
 // cloudSetup signs in to a gitmind cloud server and makes dir a synced
 // clone of one of its workspaces. Git authenticates through gitmind, which
 // fetches short-lived tokens from the server.
-func cloudSetup(ctx context.Context, dir, base, slug string) error {
+func cloudSetup(ctx context.Context, dir, base, slug string, confirm confirmFunc) error {
 	base = strings.TrimRight(base, "/")
 	creds, err := cloud.Load()
 	if err == nil && creds.URL == base {
@@ -337,7 +374,7 @@ func cloudSetup(ctx context.Context, dir, base, slug string) error {
 	// The notes repository talks only to the cloud, so a repository-wide
 	// helper is enough; the empty value clears global helpers first.
 	config := []string{"credential.helper=", "credential.helper=!'" + strings.ReplaceAll(exe, "'", `'\''`) + "' credential"}
-	if err := attachRepo(ctx, dir, g.URL, config); err != nil {
+	if err := attachRepo(ctx, dir, g.URL, config, confirm); err != nil {
 		return err
 	}
 	fmt.Printf("✓ Connected to workspace %s (%s) on %s as %s\n", ws.Slug, ws.Name, base, me.Login)

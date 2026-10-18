@@ -67,6 +67,10 @@ func fakeAPI(t *testing.T, existing ...string) (*github.Client, string) {
 	return c, root
 }
 
+// Answers for setup's switch question.
+func no(string) (bool, error)  { return false, nil }
+func yes(string) (bool, error) { return true, nil }
+
 func TestConnectRepo(t *testing.T) {
 	ctx := context.Background()
 	gh, root := fakeAPI(t)
@@ -74,7 +78,7 @@ func TestConnectRepo(t *testing.T) {
 
 	// First machine: the repo doesn't exist, so it's created and cloned.
 	laptop := filepath.Join(t.TempDir(), "laptop")
-	repo, created, err := connectRepo(ctx, gh, "octo", "gitmind-notes", true, laptop, config)
+	repo, created, err := connectRepo(ctx, gh, "octo", "gitmind-notes", true, laptop, config, no)
 	if err != nil || !created || !repo.Private {
 		t.Fatalf("connectRepo = %+v, %v, %v", repo, created, err)
 	}
@@ -109,7 +113,7 @@ func TestConnectRepo(t *testing.T) {
 		t.Fatal(err)
 	}
 	d.Close()
-	if _, created, err := connectRepo(ctx, gh, "octo", "octo/gitmind-notes", true, desktop, config); err != nil || created {
+	if _, created, err := connectRepo(ctx, gh, "octo", "octo/gitmind-notes", true, desktop, config, no); err != nil || created {
 		t.Fatalf("connect existing: created=%v err=%v", created, err)
 	}
 	for _, f := range []string{"from-laptop.md", "from-desktop.md"} {
@@ -127,12 +131,12 @@ func TestConnectRepo(t *testing.T) {
 		t.Fatal(err)
 	}
 	run(t, other, "git", "remote", "add", "origin", "https://example.com/else.git")
-	if _, _, err := connectRepo(ctx, gh, "octo", "gitmind-notes", true, other, config); err == nil || !strings.Contains(err.Error(), "already syncs") {
+	if _, _, err := connectRepo(ctx, gh, "octo", "gitmind-notes", true, other, config, no); err == nil || !strings.Contains(err.Error(), "already syncs") {
 		t.Errorf("connecting a dir with another remote: %v", err)
 	}
 
 	// Someone else's missing repo can't be created on their behalf.
-	if _, _, err := connectRepo(ctx, gh, "octo", "someone/notes", true, filepath.Join(t.TempDir(), "x"), config); err == nil {
+	if _, _, err := connectRepo(ctx, gh, "octo", "someone/notes", true, filepath.Join(t.TempDir(), "x"), config, no); err == nil {
 		t.Error("created a repo under another owner")
 	}
 }
@@ -171,5 +175,77 @@ func TestSameRepoURL(t *testing.T) {
 	}
 	if sameRepoURL("https://github.com/octo/notes.git", "https://github.com/octo/other.git") {
 		t.Error("different repos matched")
+	}
+}
+
+// A folder that already syncs elsewhere is switched only when the user
+// agrees, keeping a backup and carrying its notes over.
+func TestSwitchingKeepsNotes(t *testing.T) {
+	ctx := context.Background()
+	gh, root := fakeAPI(t, "gitmind-notes")
+	remote := filepath.Join(root, "gitmind-notes.git")
+
+	// The new location already has two notes.
+	seed := filepath.Join(t.TempDir(), "seed")
+	run(t, ".", "git", "clone", "-q", remote, seed)
+	os.MkdirAll(filepath.Join(seed, "general"), 0o755)
+	os.WriteFile(filepath.Join(seed, "general", "same.md"), []byte("same\n"), 0o644)
+	os.WriteFile(filepath.Join(seed, "general", "prefs.md"), []byte("new version\n"), 0o644)
+	run(t, seed, "git", "add", "-A")
+	run(t, seed, "git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "seed")
+	run(t, seed, "git", "push", "-q", "origin", "HEAD:main")
+
+	// The local folder syncs with somewhere else and has its own notes.
+	dir := filepath.Join(t.TempDir(), "notes")
+	if err := gitsync.Init(ctx, dir, ""); err != nil {
+		t.Fatal(err)
+	}
+	run(t, dir, "git", "remote", "add", "origin", "https://github.com/octo/old-notes.git")
+	os.MkdirAll(filepath.Join(dir, "general"), 0o755)
+	os.MkdirAll(filepath.Join(dir, "myapp"), 0o755)
+	os.WriteFile(filepath.Join(dir, "general", "same.md"), []byte("same\n"), 0o644)
+	os.WriteFile(filepath.Join(dir, "general", "prefs.md"), []byte("old version\n"), 0o644)
+	os.WriteFile(filepath.Join(dir, "myapp", "deploy.md"), []byte("only here\n"), 0o644)
+	run(t, dir, "git", "add", "-A")
+	run(t, dir, "git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "old")
+
+	// Saying no changes nothing.
+	if _, _, err := connectRepo(ctx, gh, "octo", "gitmind-notes", true, dir, nil, no); err == nil || !strings.Contains(err.Error(), "github.com/octo/old-notes") {
+		t.Fatalf("declined switch: %v", err)
+	}
+	if got := run(t, dir, "git", "remote", "get-url", "origin"); got != "https://github.com/octo/old-notes.git" {
+		t.Fatalf("remote changed after declining: %s", got)
+	}
+
+	if _, _, err := connectRepo(ctx, gh, "octo", "gitmind-notes", true, dir, nil, yes); err != nil {
+		t.Fatal(err)
+	}
+	if got := run(t, dir, "git", "remote", "get-url", "origin"); got != remote {
+		t.Errorf("origin = %s, want %s", got, remote)
+	}
+	backups, _ := filepath.Glob(dir + ".bak-*")
+	if len(backups) != 1 {
+		t.Fatalf("backups = %v", backups)
+	}
+	if data, _ := os.ReadFile(filepath.Join(backups[0], "general", "prefs.md")); string(data) != "old version\n" {
+		t.Error("the backup lost the old notes")
+	}
+	files := map[string]string{
+		"myapp/deploy.md":           "only here\n",   // only in the old folder: copied
+		"general/same.md":           "same\n",        // identical: left alone
+		"general/prefs.md":          "new version\n", // differs: new location wins...
+		"general/prefs-previous.md": "old version\n", // ...and the old version is kept beside it
+	}
+	for path, want := range files {
+		if data, err := os.ReadFile(filepath.Join(dir, path)); err != nil || string(data) != want {
+			t.Errorf("%s = %q, %v; want %q", path, data, err, want)
+		}
+	}
+	// And it was all pushed to the new location.
+	pushed := run(t, root, "git", "--git-dir", remote, "ls-tree", "-r", "--name-only", "main")
+	for _, path := range []string{"myapp/deploy.md", "general/prefs-previous.md"} {
+		if !strings.Contains(pushed, path) {
+			t.Errorf("%s wasn't pushed:\n%s", path, pushed)
+		}
 	}
 }

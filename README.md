@@ -49,6 +49,9 @@ gitmind itself, registered as git's credential helper for that repository only.
 - `gitmind init <git-url>`: any git remote, with your existing git credentials.
 
 These flags skip the question; without a terminal, setup uses gitmind.app.
+Running `setup` again and choosing somewhere else switches the notes folder
+over: it's backed up as `~/.gitmind.bak-DATE`, and notes missing from the new
+place are copied in (differing ones are kept as `NAME-previous.md`).
 
 `setup` then offers to add gitmind to Claude Code and Codex: the MCP server,
 the Claude Code hooks below, and the memory instructions, asking before each
