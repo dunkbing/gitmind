@@ -1,0 +1,247 @@
+@import "tailwindcss";
+@import "../../site/src/styles/tokens.css";
+
+@layer base {
+	html,
+	body,
+	#root {
+		height: 100%;
+	}
+	body {
+		overflow: hidden;
+	}
+	button {
+		cursor: pointer;
+	}
+	:focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: 1px;
+	}
+}
+
+@layer components {
+	.btn {
+		@apply inline-flex items-center justify-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-[13.5px] font-medium text-accent-ink transition hover:opacity-90 disabled:opacity-50;
+	}
+	.btn-ghost {
+		@apply inline-flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-[13.5px] text-muted transition hover:bg-accent-soft hover:text-ink disabled:opacity-50;
+	}
+	.btn-outline {
+		@apply inline-flex items-center justify-center gap-1.5 rounded-md border border-line px-3 py-1.5 text-[13.5px] text-ink transition hover:bg-surface disabled:opacity-50;
+	}
+	.btn-danger {
+		@apply inline-flex items-center justify-center gap-1.5 rounded-md bg-danger px-3 py-1.5 text-[13.5px] text-white transition hover:opacity-90;
+	}
+	.field {
+		@apply w-full rounded-md border border-line bg-surface px-2.5 py-1.5 text-[14px] text-ink outline-none placeholder:text-muted/70 focus:border-accent;
+	}
+	.label {
+		@apply font-sans text-[11px] font-medium tracking-[0.08em] text-muted uppercase;
+	}
+	.chip {
+		@apply inline-flex items-center gap-1 rounded bg-accent-soft px-1.5 py-px text-[12.5px] text-accent;
+	}
+	.card {
+		@apply rounded-xl border border-line bg-surface;
+	}
+	.box {
+		@apply overflow-x-auto rounded-lg border border-line bg-surface p-3 font-mono text-[12.5px] whitespace-pre;
+	}
+	.view-title {
+		@apply font-serif text-[28px] font-medium tracking-tight;
+	}
+	.prose-gm h2 {
+		@apply mt-8 mb-2 font-serif text-[19px];
+	}
+	.prose-gm p {
+		@apply my-2 text-[14.5px];
+	}
+	.prose-gm code {
+		@apply rounded bg-accent-soft px-1 font-mono text-[12.5px];
+	}
+}
+
+/* ---- the editor ------------------------------------------------------- */
+
+.gm-editor .cm-editor {
+	background: transparent;
+	font-family: var(--font-sans);
+	font-size: 16px;
+	line-height: 1.7;
+	color: var(--ink);
+}
+.gm-editor .cm-editor.cm-focused {
+	outline: none;
+}
+.gm-editor .cm-scroller {
+	font-family: inherit;
+	overflow: visible;
+}
+.gm-editor .cm-content {
+	padding: 4px 0 40vh;
+	caret-color: var(--accent);
+}
+.gm-editor .cm-line {
+	padding: 0;
+}
+.gm-editor .cm-cursor {
+	border-left: 2px solid var(--accent);
+}
+.gm-editor .cm-selectionBackground,
+.gm-editor .cm-focused .cm-selectionBackground,
+.gm-editor ::selection {
+	background: color-mix(in srgb, var(--accent) 22%, transparent) !important;
+}
+.gm-editor .cm-placeholder {
+	color: var(--ink-muted);
+	opacity: 0.6;
+}
+.gm-editor .cm-h {
+	font-family: var(--font-serif);
+	font-weight: 500;
+	letter-spacing: -0.01em;
+	line-height: 1.3;
+}
+.gm-editor .cm-h1 {
+	font-size: 1.75em;
+	padding-top: 0.5em !important;
+}
+.gm-editor .cm-h2 {
+	font-size: 1.4em;
+	padding-top: 0.6em !important;
+}
+.gm-editor .cm-h3 {
+	font-size: 1.18em;
+	padding-top: 0.4em !important;
+}
+.gm-editor .cm-h4,
+.gm-editor .cm-h5,
+.gm-editor .cm-h6 {
+	font-size: 1.05em;
+}
+.gm-editor .cm-strong {
+	font-weight: 700;
+}
+.gm-editor .cm-em {
+	font-style: italic;
+}
+.gm-editor .cm-strike,
+.gm-editor .cm-done {
+	text-decoration: line-through;
+	color: var(--ink-muted);
+}
+.gm-editor .cm-code {
+	font-family: var(--font-mono);
+	font-size: 0.86em;
+	background: var(--accent-soft);
+	border-radius: 4px;
+	padding: 1px 4px;
+}
+.gm-editor .cm-codeblock {
+	font-family: var(--font-mono);
+	font-size: 13px;
+	background: var(--surface);
+	border-left: 1px solid var(--line);
+	border-right: 1px solid var(--line);
+	padding: 0 12px !important;
+}
+.gm-editor .cm-codeblock-first {
+	border-top: 1px solid var(--line);
+	border-radius: 8px 8px 0 0;
+	padding-top: 6px !important;
+}
+.gm-editor .cm-codeblock-last {
+	border-bottom: 1px solid var(--line);
+	border-radius: 0 0 8px 8px;
+	padding-bottom: 6px !important;
+}
+.gm-editor .cm-quote {
+	border-left: 3px solid var(--line);
+	padding-left: 12px !important;
+	color: var(--ink-muted);
+}
+.gm-editor .cm-link {
+	color: var(--accent);
+	text-decoration: underline;
+	text-decoration-color: color-mix(in srgb, var(--accent) 40%, transparent);
+	text-underline-offset: 3px;
+	cursor: pointer;
+}
+.gm-editor .cm-wikilink {
+	color: var(--accent);
+	cursor: pointer;
+	border-bottom: 1px dashed color-mix(in srgb, var(--accent) 60%, transparent);
+}
+.gm-editor .cm-wikilink.missing {
+	color: var(--danger);
+}
+.gm-editor .cm-wikilink-raw {
+	cursor: text;
+}
+.gm-editor .cm-hashtag {
+	color: var(--accent);
+	background: var(--accent-soft);
+	border-radius: 4px;
+	padding: 0 3px;
+	font-size: 0.92em;
+}
+.gm-editor .cm-category {
+	font-family: var(--font-mono);
+	font-size: 0.78em;
+	text-transform: lowercase;
+	color: var(--accent);
+	background: var(--accent-soft);
+	border-radius: 4px;
+	padding: 1px 5px;
+}
+.gm-editor .cm-bullet {
+	color: var(--ink-muted);
+	display: inline-block;
+	width: 0.8em;
+	font-size: 1.15em;
+	line-height: 1;
+}
+.gm-editor .cm-fence {
+	color: var(--ink-muted);
+	opacity: 0.55;
+	font-size: 0.9em;
+}
+.gm-editor .cm-task {
+	accent-color: var(--accent);
+	margin: 0 6px 0 0;
+	vertical-align: -1px;
+	cursor: pointer;
+}
+.gm-editor .cm-hr {
+	display: inline-block;
+	width: 100%;
+	border-top: 1px solid var(--line);
+	vertical-align: middle;
+}
+.gm-editor .cm-tooltip {
+	background: var(--surface);
+	border: 1px solid var(--line);
+	border-radius: 8px;
+	box-shadow: 0 8px 24px rgb(0 0 0 / 0.12);
+	overflow: hidden;
+}
+.gm-editor .cm-tooltip-autocomplete > ul > li {
+	padding: 4px 10px !important;
+	font-size: 13.5px;
+}
+.gm-editor .cm-tooltip-autocomplete > ul > li[aria-selected] {
+	background: var(--accent-soft);
+	color: var(--ink);
+}
+.gm-editor .cm-panels {
+	background: var(--surface);
+	border-color: var(--line);
+	color: var(--ink);
+}
+.gm-editor .cm-panels input,
+.gm-editor .cm-panels button {
+	font-size: 13px;
+}
+.gm-editor .cm-searchMatch {
+	background: color-mix(in srgb, var(--accent) 25%, transparent);
+}

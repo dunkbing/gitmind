@@ -8,7 +8,7 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "types": "wrangler types",
-    "build": "cd site && bun install --frozen-lockfile && bun run build"
+    "build": "cd site && bun install --frozen-lockfile && bun run build && cd ../app && bun install --frozen-lockfile && bun run build"
   },
   "author": "",
   "license": "AGPL-3.0-only",

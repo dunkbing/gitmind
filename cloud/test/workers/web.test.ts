@@ -7,60 +7,96 @@ const html = async (r: Response) => {
 	return r.text();
 };
 
+// call is the app's JSON API, as the single-page app uses it.
+async function call<T = any>(b: Browser, method: string, url: string, body?: unknown): Promise<{ status: number; data: T }> {
+	const init: RequestInit = { method, headers: { "X-Gitmind": "1" } };
+	if (body instanceof FormData) init.body = body;
+	else if (body !== undefined) {
+		init.body = JSON.stringify(body);
+		(init.headers as Record<string, string>)["Content-Type"] = "application/json";
+	}
+	const res = await b.fetch("/api/app" + url, init);
+	return { status: res.status, data: (await res.json()) as T };
+}
+
 describe("web app", () => {
 	it("sends signed-out visitors to sign-in and back", async () => {
 		const res = await new Browser().fetch("/w/whoever");
 		expect(res.status).toBe(302);
 		expect(res.headers.get("Location")).toBe("/login?next=%2Fw%2Fwhoever");
+		expect((await new Browser().fetch("/api/app/me")).status).toBe(401);
 	});
 
-	it("creates, views, edits, moves and deletes notes", async () => {
+	it("serves the app shell for every app page", async () => {
+		const dee = await signedIn("dee");
+		expect((await dee.fetch("/app")).headers.get("Location")).toBe("/w/dee");
+		for (const page of ["/w/dee", "/w/dee/n/ops/x.md", "/w/dee/graph", "/connect"]) {
+			const res = await dee.fetch(page);
+			expect(await html(res)).toContain('<div id="root">');
+			expect(res.headers.get("Content-Security-Policy")).toContain("script-src 'self'");
+		}
+	});
+
+	it("creates, reads, edits, moves and deletes notes", async () => {
 		const erin = await signedIn("erin");
-		const home = await erin.fetch("/app");
-		expect(home.headers.get("Location")).toBe("/w/erin");
-		expect(await html(await erin.fetch("/w/erin"))).toContain("No notes yet");
+		const me = await call(erin, "GET", "/me");
+		expect(me.data.user.login).toBe("erin");
+		expect(me.data.workspaces.map((w: { slug: string }) => w.slug)).toEqual(["erin"]);
+		expect((await call(erin, "GET", "/w/erin/notes")).data).toEqual([]);
 
-		let res = await erin.post("/w/erin/new", { title: "Deploy steps", directory: "ops", tags: "deploy, ci", content: "- [setup] run [[Migrations]] first\n- see [[Rollback]]" });
-		expect(res.headers.get("Location")).toBe("/w/erin/n/ops/deploy-steps.md");
-		await erin.post("/w/erin/new", { title: "Rollback", directory: "ops", content: "- [gotcha] keep the last two releases" });
+		let r = await call(erin, "POST", "/w/erin/notes", { title: "Deploy steps", directory: "ops", tags: ["deploy", "ci"], content: "- [setup] run [[Migrations]] first\n- see [[Rollback]]" });
+		expect(r.data.path).toBe("ops/deploy-steps.md");
+		await call(erin, "POST", "/w/erin/notes", { title: "Rollback", directory: "ops", content: "- [gotcha] keep the last two releases" });
+		const list = (await call(erin, "GET", "/w/erin/notes")).data;
+		expect(list.map((n: { path: string }) => n.path).sort()).toEqual(["ops/deploy-steps.md", "ops/rollback.md"]);
 
-		const page = await html(await erin.fetch("/w/erin/n/ops/deploy-steps.md"));
-		expect(page).toContain('<span class="cat">setup</span>');
-		expect(page).toContain('<a class="wiki" href="/w/erin/n/ops/rollback.md">Rollback</a>');
-		expect(page).toContain('wiki missing" title="No such note yet">Migrations');
+		await call(erin, "POST", "/w/erin/pin", { path: "ops/rollback.md", pinned: true });
+		expect((await call(erin, "GET", "/w/erin/notes")).data.find((n: { path: string }) => n.path === "ops/rollback.md").pinned).toBe(true);
+		const note = (await call(erin, "GET", "/w/erin/note?path=ops/rollback.md")).data;
+		expect(note.content).toContain("keep the last two releases");
+		expect(note.backlinks).toEqual([{ title: "Deploy steps", path: "ops/deploy-steps.md" }]);
 
 		// Search with a category filter shows the matching lines.
-		expect(await html(await erin.fetch("/w/erin?category=gotcha"))).toContain("keep the last two releases");
+		const hits = (await call(erin, "GET", "/w/erin/search?category=gotcha")).data;
+		expect(hits[0].observations).toEqual(["keep the last two releases"]);
 
-		// Raw edit: lock the note, which keeps agents out but not people.
-		const edit = await html(await erin.fetch("/w/erin/edit/ops/rollback.md"));
-		const content = /<textarea name="content">([\s\S]*?)<\/textarea>/.exec(edit)![1].replace(/&#(\d+);/g, (_, n) => String.fromCharCode(n));
-		res = await erin.post("/w/erin/edit/ops/rollback.md", { content: content.replace("---\n\n", "locked: true\n---\n\n") });
-		expect(res.headers.get("Location")).toBe("/w/erin/n/ops/rollback.md?flash=Saved");
+		// Saving checks the version it started from: a stale save is refused
+		// with the current content, so nothing is overwritten unseen.
+		const locked = note.content.replace("---\n\n", "locked: true\n---\n\n");
+		r = await call(erin, "PUT", "/w/erin/note", { path: "ops/rollback.md", content: locked, base: note.hash });
+		expect(r.status).toBe(200);
+		const stale = await call(erin, "PUT", "/w/erin/note", { path: "ops/rollback.md", content: "overwrite", base: note.hash });
+		expect(stale.status).toBe(409);
+		expect(stale.data.current.content).toBe(locked);
+
+		// Locked keeps agents out but not people.
 		const { token } = await connect(erin);
 		const agentEdit = await tool(token, "edit_note", { identifier: "Rollback", operation: "append", content: "- nope" });
 		expect(agentEdit.isError).toBe(true);
 		expect(agentEdit.text).toContain("locked");
 
-		res = await erin.post("/w/erin/move/ops/deploy-steps.md", { directory: "runbooks", title: "Deploy runbook" });
-		expect(res.headers.get("Location")).toContain("/w/erin/n/runbooks/deploy-runbook.md");
-		res = await erin.post("/w/erin/delete/runbooks/deploy-runbook.md", { confirm: "on" });
-		expect(res.headers.get("Location")).toBe("/w/erin");
+		r = await call(erin, "POST", "/w/erin/move", { path: "ops/deploy-steps.md", directory: "runbooks", title: "Deploy runbook" });
+		expect(r.data.path).toBe("runbooks/deploy-runbook.md");
+		r = await call(erin, "DELETE", "/w/erin/note?path=runbooks/deploy-runbook.md");
+		expect(r.status).toBe(200);
 
-		const history = await html(await erin.fetch("/w/erin/history"));
+		const history = (await call(erin, "GET", "/w/erin/history")).data.map((c: { message: string }) => c.message);
 		expect(history).toContain("memory: delete runbooks/deploy-runbook.md (cloud, erin)");
-		expect(history).toContain("memory: move ops/deploy-steps.md -&#62; runbooks/deploy-runbook.md (cloud, erin)");
+		expect(history).toContain("memory: move ops/deploy-steps.md -> runbooks/deploy-runbook.md (cloud, erin)");
 
-		const graph = await (await erin.fetch("/w/erin/graph.json")).json();
+		const graph = (await call(erin, "GET", "/w/erin/graph")).data;
 		expect(graph).toMatchObject({ nodes: [{ path: "ops/rollback.md", title: "Rollback" }], edges: [] });
 
 		const zip = unzipSync(new Uint8Array(await (await erin.fetch("/w/erin/export.zip")).arrayBuffer()));
 		expect(Object.keys(zip)).toEqual(["erin/ops/rollback.md"]);
 	});
 
-	it("refuses cross-site form posts", async () => {
+	it("refuses changes without the app's header or from other sites", async () => {
 		const fay = await signedIn("fay");
-		const res = await fay.fetch("/w/fay/new", { method: "POST", headers: { Origin: "https://evil.example", "Content-Type": "application/x-www-form-urlencoded" }, body: "title=x&content=y" });
+		const body = JSON.stringify({ title: "x", content: "y" });
+		let res = await fay.fetch("/api/app/w/fay/notes", { method: "POST", headers: { "Content-Type": "application/json" }, body });
+		expect(res.status).toBe(403);
+		res = await fay.fetch("/api/app/w/fay/notes", { method: "POST", headers: { Origin: "https://evil.example", "Content-Type": "application/json", "X-Gitmind": "1" }, body });
 		expect(res.status).toBe(403);
 	});
 
@@ -77,10 +113,13 @@ describe("web app", () => {
 			},
 			{ name: "Empty", created_at: "2026-09-02T10:00:00Z", chat_messages: [] },
 		];
-		const form = new FormData();
-		form.set("file", new File([zipSync({ "conversations.json": strToU8(JSON.stringify(claude)) })], "data.zip"));
-		let page = await html(await gus.fetch("/w/gus/import", { method: "POST", body: form }));
-		expect(page).toContain("Imported 1 note(s) from claude");
+		const upload = (file: File) => {
+			const form = new FormData();
+			form.set("file", file);
+			return call(gus, "POST", "/w/gus/import", form);
+		};
+		let r = await upload(new File([zipSync({ "conversations.json": strToU8(JSON.stringify(claude)) })], "data.zip"));
+		expect(r.data).toMatchObject({ source: "claude", written: ["imports/claude/2026-09-01-postgres-tuning.md"] });
 
 		const chatgpt = [
 			{
@@ -94,15 +133,13 @@ describe("web app", () => {
 				},
 			},
 		];
-		const form2 = new FormData();
-		form2.set("file", new File([JSON.stringify(chatgpt)], "conversations.json"));
-		page = await html(await gus.fetch("/w/gus/import", { method: "POST", body: form2 }));
-		expect(page).toContain("Imported 1 note(s) from chatgpt");
+		r = await upload(new File([JSON.stringify(chatgpt)], "conversations.json"));
+		expect(r.data.source).toBe("chatgpt");
+		expect(r.data.written.length).toBe(1);
 
 		// Importing again skips what exists.
-		const again = new FormData();
-		again.set("file", new File([JSON.stringify(chatgpt)], "conversations.json"));
-		expect(await html(await gus.fetch("/w/gus/import", { method: "POST", body: again }))).toContain("skipped 1 that already existed");
+		r = await upload(new File([JSON.stringify(chatgpt)], "conversations.json"));
+		expect(r.data.skipped.length).toBe(1);
 
 		const { token } = await connect(gus);
 		const found = await tool(token, "search_notes", { query: "work_mem" });
@@ -113,14 +150,14 @@ describe("web app", () => {
 
 	it("shares team workspaces through invites", async () => {
 		const hana = await signedIn("hana");
-		let res = await hana.post("/teams", { name: "Acme Platform" });
-		expect(res.headers.get("Location")).toBe("/w/acme-platform/settings");
-		const settings = await html(await hana.post("/w/acme-platform/invites", { role: "member" }));
-		const link = /(https:\/\/memory\.test\/invite\/[A-Za-z0-9_-]+)/.exec(settings)![1];
+		const team = await call(hana, "POST", "/teams", { name: "Acme Platform" });
+		expect(team.data.slug).toBe("acme-platform");
+		const link = (await call(hana, "POST", "/w/acme-platform/invites", { role: "member" })).data.url as string;
+		expect(link).toMatch(/^https:\/\/memory\.test\/invite\/[A-Za-z0-9_-]+$/);
 
 		const ivan = await signedIn("ivan");
 		expect(await html(await ivan.fetch(link))).toContain("Join Acme Platform?");
-		res = await ivan.post(new URL(link).pathname, {});
+		const res = await ivan.post(new URL(link).pathname, {});
 		expect(res.headers.get("Location")).toBe("/w/acme-platform");
 		// Links work once.
 		expect(await html(await (await signedIn("jo")).fetch(link))).toContain("invalid or has expired");
@@ -132,13 +169,18 @@ describe("web app", () => {
 		const hanaToken = (await connect(hana)).token;
 		expect((await tool(hanaToken, "search_notes", { query: "rotation", workspace: "acme-platform" })).text).toContain("ops/on-call.md");
 		expect((await tool(hanaToken, "search_notes", { query: "rotation" })).text).toBe("No notes match.");
-		const history = await html(await hana.fetch("/w/acme-platform/history"));
-		expect(history).toContain("(cloud, ivan)");
+		const history = (await call(hana, "GET", "/w/acme-platform/history")).data;
+		expect(history.some((c: { message: string }) => c.message.includes("(cloud, ivan)"))).toBe(true);
+		const settings = (await call(hana, "GET", "/w/acme-platform/settings")).data;
+		expect(settings.members.map((m: { login: string }) => m.login)).toEqual(["hana", "ivan"]);
 
 		// Members can't invite; outsiders can't see the team at all.
-		expect(await html(await ivan.post("/w/acme-platform/invites", { role: "member" }))).toContain("only owners and admins can invite");
-		expect((await (await signedIn("kim")).fetch("/w/acme-platform")).status).toBe(404);
-		const kimToken = (await connect(await signedIn("kim"))).token;
+		const denied = await call(ivan, "POST", "/w/acme-platform/invites", { role: "member" });
+		expect(denied.status).toBe(400);
+		expect(denied.data.error).toContain("only owners and admins can invite");
+		const kim = await signedIn("kim");
+		expect((await call(kim, "GET", "/w/acme-platform/notes")).status).toBe(404);
+		const kimToken = (await connect(kim)).token;
 		expect((await tool(kimToken, "search_notes", { query: "rotation", workspace: "acme-platform" })).isError).toBe(true);
 	});
 });

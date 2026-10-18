@@ -1,7 +1,6 @@
 // Page shell and styles for the web app.
 
 import type { User, Workspace } from "../accounts";
-import { escape } from "./markdown";
 
 export interface PageOptions {
 	title: string;
@@ -80,4 +79,4 @@ ${o.flash ? `<div class="flash">${escape(o.flash)}</div>` : ""}${o.error ? `<div
 // The app icon inline, in the page's accent color.
 const LOGO = `<svg viewBox="0 0 512 512" width="22" height="22" aria-hidden="true" class="shrink-0 text-accent"><g fill="none" stroke="currentColor" stroke-linecap="round"><path d="M176 112 V346" stroke-width="44"/><path d="M176 300 C176 210 336 244 336 150" stroke-width="44"/><circle cx="176" cy="404" r="48" stroke-width="40"/></g><g fill="currentColor"><circle cx="176" cy="104" r="58"/><circle cx="336" cy="134" r="58"/></g></svg>`;
 
-export { escape };
+export const escape = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);

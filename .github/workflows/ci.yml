@@ -37,6 +37,9 @@ jobs:
       - name: Build the site
         run: bun install --frozen-lockfile && bun run build
         working-directory: cloud/site
+      - name: Build the app
+        run: bun install --frozen-lockfile && bun run build
+        working-directory: cloud/app
       - run: bunx wrangler types
       - run: bunx tsc --noEmit && bunx tsc --noEmit -p test/node
       - run: bunx vitest run

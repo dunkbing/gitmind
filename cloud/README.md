@@ -12,9 +12,10 @@ that your laptops' gitmind CLI syncs with.
 - **Site and docs** (`site/`, Astro + Tailwind): static pages served as
   Worker assets, with a sitemap, structured data and `llms.txt` for search
   engines and AI assistants.
-- **Web app**: browse, search (with tag, category and date filters), edit,
-  move and pin notes; follow links and backlinks; a link graph; the change
-  history; import and export.
+- **Web app** (`app/`, a single-page app): a note editor with Obsidian-style
+  live preview (CodeMirror), autosave, `[[link]]` completion, a folder tree,
+  a ⌘K palette, backlinks and outline, search with tag, category and date
+  filters, a link graph, the change history, import and export.
 - **Import** Claude and ChatGPT data exports, or a zip of Markdown notes.
 - **Teams**: shared workspaces with invite links and owner/admin/member roles.
 - **Your data is git**: every workspace is a git repository (on Cloudflare
@@ -71,8 +72,9 @@ Then sign in at your domain and follow its **Connect** page.
 ## Development
 
 ```bash
-bun install && (cd site && bun install)
-(cd site && bun run build)   # the marketing site, docs and app.css (Astro + Tailwind)
+bun install
+bun run build       # the marketing site and docs (site/, Astro), then the app (app/, React + CodeMirror)
+(cd app && bun run dev)   # the app with hot reload, against `wrangler dev` on :8787
 bun run types       # generates worker-configuration.d.ts
 bun run typecheck
 ./scripts/in-docker.sh node node_modules/vitest/vitest.mjs run   # all tests

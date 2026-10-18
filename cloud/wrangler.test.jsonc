@@ -8,7 +8,7 @@
 	"compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
 	// The marketing site and docs (site/, built with Astro). Static files are
 	// served directly; everything else (the app, OAuth, /mcp) reaches the Worker.
-	"assets": { "directory": "./site/dist" },
+	"assets": { "directory": "./site/dist", "binding": "ASSETS" },
 	"durable_objects": { "bindings": [{ "name": "WORKSPACE", "class_name": "Workspace" }] },
 	"migrations": [{ "tag": "v1", "new_sqlite_classes": ["Workspace"] }],
 	"d1_databases": [{ "binding": "DB", "database_name": "gitmind", "database_id": "test", "migrations_dir": "migrations" }],

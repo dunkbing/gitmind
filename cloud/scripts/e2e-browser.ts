@@ -17,8 +17,8 @@ async function go(url: string, init: RequestInit = {}) {
 }
 await go(`${base}/dev/login?login=${login}&next=/`);
 if (process.env.SEARCH) {
-	const search = await go(`${base}/w/${login}?q=${encodeURIComponent(process.env.SEARCH)}`);
-	console.log("cloud search finds:", [...(await search.text()).matchAll(/<div class="meta">([^ <]+)/g)].map((m) => m[1]).join(", ") || "nothing");
+	const search = await go(`${base}/api/app/w/${login}/search?q=${encodeURIComponent(process.env.SEARCH)}`);
+	console.log("cloud search finds:", ((await search.json()) as { path: string }[]).map((h) => h.path).join(", ") || "nothing");
 	process.exit(0);
 }
 const consent = await go(authorizeUrl);
