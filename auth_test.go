@@ -189,7 +189,7 @@ func TestSwitchingKeepsNotes(t *testing.T) {
 	seed := filepath.Join(t.TempDir(), "seed")
 	run(t, ".", "git", "clone", "-q", remote, seed)
 	os.MkdirAll(filepath.Join(seed, "general"), 0o755)
-	os.WriteFile(filepath.Join(seed, "general", "same.md"), []byte("same\n"), 0o644)
+	os.WriteFile(filepath.Join(seed, "general", "same.md"), []byte("---\ntitle: Same\ncreated: 2026-10-18T05:00:00Z\n---\n\nsame\n"), 0o644)
 	os.WriteFile(filepath.Join(seed, "general", "prefs.md"), []byte("new version\n"), 0o644)
 	run(t, seed, "git", "add", "-A")
 	run(t, seed, "git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "seed")
@@ -203,7 +203,8 @@ func TestSwitchingKeepsNotes(t *testing.T) {
 	run(t, dir, "git", "remote", "add", "origin", "https://github.com/octo/old-notes.git")
 	os.MkdirAll(filepath.Join(dir, "general"), 0o755)
 	os.MkdirAll(filepath.Join(dir, "myapp"), 0o755)
-	os.WriteFile(filepath.Join(dir, "general", "same.md"), []byte("same\n"), 0o644)
+	// Saved separately, so only its created time differs: still the same note.
+	os.WriteFile(filepath.Join(dir, "general", "same.md"), []byte("---\ntitle: Same\ncreated: 2026-10-17T09:00:00Z\n---\n\nsame\n"), 0o644)
 	os.WriteFile(filepath.Join(dir, "general", "prefs.md"), []byte("old version\n"), 0o644)
 	os.WriteFile(filepath.Join(dir, "myapp", "deploy.md"), []byte("only here\n"), 0o644)
 	run(t, dir, "git", "add", "-A")

@@ -13,6 +13,7 @@ import (
 
 	"github.com/dunkbing/gitmind/internal/gitsync"
 	"github.com/dunkbing/gitmind/internal/memory"
+	"github.com/dunkbing/gitmind/internal/notes"
 )
 
 // switchRepo moves a notes folder to a new remote without losing notes: the
@@ -88,7 +89,7 @@ func bringNotes(from, to string) (copied, kept int, err error) {
 		}
 		dst := filepath.Join(to, rel)
 		if existing, err := os.ReadFile(dst); err == nil {
-			if string(existing) == string(data) {
+			if sameNote(rel, existing, data) {
 				return nil
 			}
 			dst = strings.TrimSuffix(dst, ".md") + "-previous.md"
@@ -102,6 +103,15 @@ func bringNotes(from, to string) (copied, kept int, err error) {
 		return os.WriteFile(dst, data, 0o644)
 	})
 	return copied, kept, err
+}
+
+// sameNote reports whether two versions of a note say the same thing:
+// same title, tags and text, ignoring metadata such as when each copy was
+// created.
+func sameNote(path string, a, b []byte) bool {
+	x, y := notes.Parse(path, a), notes.Parse(path, b)
+	return x.Title == y.Title && strings.Join(x.Tags, " ") == strings.Join(y.Tags, " ") &&
+		strings.TrimSpace(x.Body) == strings.TrimSpace(y.Body)
 }
 
 // displayRemote shortens a remote URL for messages, without credentials.
