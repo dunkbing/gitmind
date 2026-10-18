@@ -197,6 +197,11 @@ export class Store {
 		return this.sql.exec(`SELECT 1 FROM chunks WHERE vec IS NOT NULL LIMIT 1`).toArray().length > 0;
 	}
 
+	embeddingStats(): { passages: number; embedded: number } {
+		const r = this.sql.exec(`SELECT count(*) AS passages, count(vec) AS embedded FROM chunks`).one();
+		return { passages: Number(r.passages), embedded: Number(r.embedded) };
+	}
+
 	pendingCount(): number {
 		return Number(this.sql.exec(`SELECT count(*) AS c FROM chunks WHERE vec IS NULL`).one().c);
 	}

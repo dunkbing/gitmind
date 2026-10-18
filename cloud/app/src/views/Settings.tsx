@@ -92,6 +92,22 @@ export function SettingsView({ ws }: { ws: Workspace }) {
 				</section>
 			)}
 
+			{s && (
+				<section className="mt-10">
+					<h2 className="font-serif text-[19px]">Search</h2>
+					<p className="mt-2 text-[14px]">
+						{!s.stats.model
+							? "Keyword search: this server has no embedding model configured."
+							: s.stats.passages === 0
+								? "Search by meaning is ready; notes are indexed as they're written."
+								: s.stats.embedded >= s.stats.passages
+									? `Search by meaning covers all ${s.stats.passages} passages of your notes.`
+									: `Indexing for search by meaning: ${s.stats.embedded} of ${s.stats.passages} passages so far; notes not indexed yet are found by their words.`}
+					</p>
+					{s.stats.model && <p className="mt-1 text-[13px] text-muted">Embeddings: {s.stats.model} (Cloudflare Workers AI), kept beside your notes, never in the git repository.</p>}
+				</section>
+			)}
+
 			<section className="mt-10">
 				<h2 className="font-serif text-[19px]">Your data</h2>
 				<p className="mt-2 text-[14px]">It's a git repository of Markdown files, and it's yours.</p>

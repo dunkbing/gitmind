@@ -62,7 +62,7 @@ export interface Member {
 }
 
 export interface Settings {
-	stats: { notes: number; head: string | null };
+	stats: { notes: number; head: string | null; passages: number; embedded: number; model: string | null };
 	members: Member[];
 	canManage: boolean;
 	setupCommand: string;

@@ -136,9 +136,13 @@ export class Workspace extends DurableObject<Env> {
 	async alarm(): Promise<void> {
 		if (!this.embedder) return;
 		const deadline = Date.now() + 60_000;
+		let done = 0;
 		while (Date.now() < deadline) {
 			const batch = this.store.pendingChunks(32);
-			if (!batch.length) return;
+			if (!batch.length) {
+				if (done) console.log(`embedded ${done} passages with ${this.embedder.id}`);
+				return;
+			}
 			let vecs: Float32Array[];
 			try {
 				vecs = await this.embedder.embed(batch.map((c) => c.text), "document");
@@ -148,14 +152,21 @@ export class Workspace extends DurableObject<Env> {
 				return;
 			}
 			this.store.setVectors(batch.map((c, i) => ({ id: c.id, hash: c.hash, vec: vecs[i] })));
+			done += batch.length;
 		}
+		console.log(`embedded ${done} passages, continuing`);
 		await this.ctx.storage.setAlarm(Date.now() + 1000);
 	}
 
 	// embedLater schedules the alarm when there's something to embed.
 	private async embedLater() {
-		if (!this.embedder || this.store.pendingCount() === 0) return;
-		if ((await this.ctx.storage.getAlarm()) === null) await this.ctx.storage.setAlarm(Date.now() + 500);
+		if (!this.embedder) return;
+		const pending = this.store.pendingCount();
+		if (pending === 0) return;
+		if ((await this.ctx.storage.getAlarm()) === null) {
+			await this.ctx.storage.setAlarm(Date.now() + 500);
+			console.log(`${pending} passages to embed; scheduled`);
+		}
 	}
 
 	async readNote(id: string): Promise<{ path: string; content: string; updated: number; backlinks: { title: string; path: string }[] }> {
@@ -185,9 +196,10 @@ export class Workspace extends DurableObject<Env> {
 		return sessionContext(this.store, cleanDir(project), budget);
 	}
 
-	async stats(): Promise<{ notes: number; head: string | null }> {
+	async stats(): Promise<{ notes: number; head: string | null; passages: number; embedded: number; model: string | null }> {
 		await this.fresh();
-		return { notes: this.store.count(), head: this.store.meta("head") || null };
+		const { passages, embedded } = this.store.embeddingStats();
+		return { notes: this.store.count(), head: this.store.meta("head") || null, passages, embedded, model: this.embedder?.id ?? null };
 	}
 
 	// files returns every note's content, for export.
