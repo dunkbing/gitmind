@@ -283,19 +283,7 @@ func (a *agentSetup) ask(ctx context.Context, question string) (bool, error) {
 	if a.assumeYes {
 		return true, nil
 	}
-	for {
-		fmt.Fprintf(a.out, "%s [Y/n] ", question)
-		answer, err := readLine(ctx, a.in)
-		if err != nil {
-			return false, err
-		}
-		switch strings.ToLower(answer) {
-		case "", "y", "yes":
-			return true, nil
-		case "n", "no":
-			return false, nil
-		}
-	}
+	return confirm(ctx, a.in, a.out, question)
 }
 
 func shellQuote(s string) string {

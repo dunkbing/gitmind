@@ -241,19 +241,7 @@ func confirmer(ctx context.Context, assumeYes bool) confirmFunc {
 		if !isTerminal() {
 			return false, nil
 		}
-		for {
-			fmt.Printf("%s [Y/n] ", question)
-			answer, err := readLine(ctx, stdin)
-			if err != nil {
-				return false, err
-			}
-			switch strings.ToLower(answer) {
-			case "", "y", "yes":
-				return true, nil
-			case "n", "no":
-				return false, nil
-			}
-		}
+		return confirm(ctx, stdin, os.Stdout, question)
 	}
 }
 

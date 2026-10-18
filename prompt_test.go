@@ -31,7 +31,7 @@ func TestChooseProvider(t *testing.T) {
 	}
 	var out bytes.Buffer
 	chooseProvider(context.Background(), bufio.NewReader(strings.NewReader("9\n1\n")), &out)
-	if !strings.Contains(out.String(), "Please answer 1, 2, 3 or 4.") {
+	if !strings.Contains(out.String(), "Please answer a number from 1 to 4.") {
 		t.Errorf("no hint after a bad answer:\n%s", out.String())
 	}
 }
