@@ -223,12 +223,12 @@ export class Store {
 	}
 
 	// semantic ranks notes by their closest passage to the query vector.
-	private semantic(vec: Float32Array, q: Query, limit: number, minScore: number): (Hit & { score: number })[] {
+	private semantic(vec: Float32Array, q: Query, limit: number, minScore: number, excludeId?: number): (Hit & { score: number })[] {
 		const [filter, args] = filterSQL(q);
 		const allowed = filter ? new Set(this.sql.exec(`SELECT n.id FROM notes n WHERE 1 = 1${filter}`, ...args).toArray().map((r) => Number(r.id))) : null;
 		const best = new Map<number, { score: number; chunkId: number }>();
 		for (const v of this.loadVectors()) {
-			if (allowed && !allowed.has(v.noteId)) continue;
+			if ((allowed && !allowed.has(v.noteId)) || v.noteId === excludeId) continue;
 			if (v.vec.length !== vec.length) continue;
 			const score = dot(v.vec, vec);
 			if (score < minScore) continue;
@@ -264,10 +264,7 @@ export class Store {
 		for (const x of mean) n += x * x;
 		n = Math.sqrt(n) || 1;
 		for (let i = 0; i < mean.length; i++) mean[i] /= n;
-		return this.semantic(mean, {}, limit + 1, minScore)
-			.filter((h) => h.path !== path)
-			.slice(0, limit)
-			.map(({ score: _, ...h }) => h);
+		return this.semantic(mean, {}, limit, minScore, Number(id)).map(({ score: _, ...h }) => h);
 	}
 
 	count(): number {
