@@ -5,7 +5,6 @@
 package cloud
 
 import (
-	"bufio"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -102,10 +101,12 @@ type token struct {
 }
 
 // Login signs in to the server at base. open is called with the URL the
-// user must visit; prompt, when non-nil, lets the user paste the address
-// their browser was redirected to instead (for SSH sessions, where the
-// redirect can't reach this machine).
-func Login(ctx context.Context, base string, open func(string), prompt io.Reader) (*Credentials, error) {
+// user must visit; prompt, when non-nil, reads the address their browser was
+// redirected to, pasted by the user instead (for SSH sessions, where the
+// redirect can't reach this machine). prompt must stop reading when its
+// context is cancelled, which happens once sign-in no longer needs it, so it
+// doesn't keep consuming keys meant for later prompts.
+func Login(ctx context.Context, base string, open func(string), prompt func(context.Context) (string, error)) (*Credentials, error) {
 	base = strings.TrimRight(base, "/")
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -144,8 +145,15 @@ func Login(ctx context.Context, base string, open func(string), prompt io.Reader
 	go srv.Serve(ln)
 	defer srv.Close()
 	if prompt != nil {
+		promptCtx, stopPrompt := context.WithCancel(ctx)
+		stopped := make(chan struct{})
+		defer func() {
+			stopPrompt()
+			<-stopped
+		}()
 		go func() {
-			line, err := bufio.NewReader(prompt).ReadString('\n')
+			defer close(stopped)
+			line, err := prompt(promptCtx)
 			if err != nil {
 				return
 			}

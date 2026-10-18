@@ -12,6 +12,7 @@ import (
 
 	"charm.land/huh/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/muesli/cancelreader"
 	"golang.org/x/term"
 )
 
@@ -19,8 +20,13 @@ import (
 // separate reads.
 var stdin = bufio.NewReader(os.Stdin)
 
-// readLine reads one line, giving up when ctx is cancelled (Ctrl+C).
+// readLine reads one line, giving up when ctx is cancelled (Ctrl+C, or a
+// caller that no longer needs the answer). On a terminal the read itself is
+// cancelled, so it can't go on to swallow keys meant for a later prompt.
 func readLine(ctx context.Context, in *bufio.Reader) (string, error) {
+	if in == stdin && in.Buffered() == 0 && term.IsTerminal(int(os.Stdin.Fd())) {
+		return readTerminalLine(ctx)
+	}
 	type result struct {
 		line string
 		err  error
@@ -37,6 +43,48 @@ func readLine(ctx context.Context, in *bufio.Reader) (string, error) {
 		}
 		return strings.TrimSpace(r.line), nil
 	case <-ctx.Done():
+		return "", ctx.Err()
+	}
+}
+
+func readTerminalLine(ctx context.Context) (string, error) {
+	cr, err := cancelreader.NewReader(os.Stdin)
+	if err != nil {
+		return "", err
+	}
+	defer cr.Close()
+	type result struct {
+		line string
+		err  error
+	}
+	ch := make(chan result, 1)
+	go func() {
+		var line []byte
+		b := make([]byte, 1)
+		for {
+			n, err := cr.Read(b)
+			if n == 1 {
+				if b[0] == '\n' {
+					break
+				}
+				line = append(line, b[0])
+			}
+			if err != nil {
+				ch <- result{string(line), err}
+				return
+			}
+		}
+		ch <- result{string(line), nil}
+	}()
+	select {
+	case r := <-ch:
+		if r.err != nil && r.line == "" {
+			return "", r.err
+		}
+		return strings.TrimSpace(r.line), nil
+	case <-ctx.Done():
+		cr.Cancel()
+		<-ch
 		return "", ctx.Err()
 	}
 }

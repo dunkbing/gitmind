@@ -5,7 +5,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"strings"
@@ -384,9 +383,9 @@ func cloudLogin(ctx context.Context, base string) (*cloud.Credentials, error) {
 		fmt.Printf("Open this link in a browser and approve gitmind:\n\n  %s\n\n", u)
 		fmt.Println("If the browser then fails to load a 127.0.0.1 page (e.g. over SSH), copy that page's full address and paste it here.")
 	}
-	var prompt io.Reader
+	var prompt func(context.Context) (string, error)
 	if !interactive {
-		prompt = stdin
+		prompt = func(ctx context.Context) (string, error) { return readLine(ctx, stdin) }
 	}
 	c, err := cloud.Login(ctx, base, open, prompt)
 	if err != nil {

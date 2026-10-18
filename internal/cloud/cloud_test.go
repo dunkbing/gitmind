@@ -6,7 +6,6 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -159,9 +158,15 @@ func TestLoginByPastingTheRedirect(t *testing.T) {
 		resp.Body.Close()
 		pasted <- resp.Header.Get("Location") + "\n"
 	}
-	r, w := io.Pipe()
-	go func() { w.Write([]byte(<-pasted)); w.Close() }()
-	c, err := Login(context.Background(), srv.URL, open, r)
+	prompt := func(ctx context.Context) (string, error) {
+		select {
+		case line := <-pasted:
+			return line, nil
+		case <-ctx.Done():
+			return "", ctx.Err()
+		}
+	}
+	c, err := Login(context.Background(), srv.URL, open, prompt)
 	if err != nil || c.AccessToken != "at-1" {
 		t.Fatalf("Login = %+v, %v", c, err)
 	}
