@@ -23,18 +23,6 @@ function activeLines(state: EditorState, focused: boolean): Set<number> {
 
 const hide = Decoration.replace({});
 
-class BulletWidget extends WidgetType {
-	eq() {
-		return true;
-	}
-	toDOM() {
-		const s = document.createElement("span");
-		s.className = "cm-bullet";
-		s.textContent = "•";
-		return s;
-	}
-}
-
 class CheckboxWidget extends WidgetType {
 	constructor(
 		readonly checked: boolean,
@@ -165,22 +153,21 @@ function build(view: EditorView): DecorationSet {
 				}
 				if (name === "TaskMarker") {
 					const checked = state.doc.sliceString(node.from, node.to).toLowerCase() === "[x]";
-					if (!active.has(lineOf(node.from))) decos.push(Decoration.replace({ widget: new CheckboxWidget(checked, node.from) }).range(node.from, node.to));
-					if (checked) {
-						const line = state.doc.lineAt(node.from);
-						decos.push(Decoration.mark({ class: "cm-done" }).range(node.to, line.to));
-					}
+					const line = state.doc.lineAt(node.from);
+					const start = line.from + (/^\s*/.exec(line.text)?.[0].length ?? 0);
+					// "- [ ]" stays a checkbox unless the cursor is inside it.
+					if (!selected(start, node.to)) decos.push(Decoration.replace({ widget: new CheckboxWidget(checked, node.from) }).range(start, node.to));
+					const text = node.to + (state.doc.sliceString(node.to, node.to + 1) === " " ? 1 : 0);
+					if (checked && text < line.to) decos.push(Decoration.mark({ class: "cm-done" }).range(text, line.to));
 					return;
 				}
 				if (name === "ListMark") {
 					const mark = state.doc.sliceString(node.from, node.to);
 					const line = state.doc.lineAt(node.from);
 					const isTask = /^\s*[-*+]\s+\[[ xX]\]/.test(line.text);
-					if (/^[-*+]$/.test(mark) && !active.has(line.number)) {
-						// A task's checkbox stands in for its bullet.
-						if (isTask) decos.push(hide.range(node.from, Math.min(line.to, node.to + 1)));
-						else decos.push(Decoration.replace({ widget: new BulletWidget() }).range(node.from, node.to));
-					}
+					// The dot is drawn over the "-" itself, so the text never
+					// shifts when the raw marker shows.
+					if (/^[-*+]$/.test(mark) && !isTask && !selected(node.from, node.to)) decos.push(Decoration.mark({ class: "cm-list-dash" }).range(node.from, node.to));
 					return;
 				}
 			},

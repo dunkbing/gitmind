@@ -194,12 +194,20 @@
 	border-radius: 4px;
 	padding: 1px 5px;
 }
-.gm-editor .cm-bullet {
-	color: var(--ink-muted);
-	display: inline-block;
-	width: 0.8em;
-	font-size: 1.15em;
-	line-height: 1;
+.gm-editor .cm-list-dash {
+	color: transparent;
+	position: relative;
+}
+.gm-editor .cm-list-dash::after {
+	content: "";
+	position: absolute;
+	left: 50%;
+	top: 50%;
+	width: 5px;
+	height: 5px;
+	margin: -2px 0 0 -2.5px;
+	border-radius: 50%;
+	background: var(--ink-muted);
 }
 .gm-editor .cm-fence {
 	color: var(--ink-muted);
@@ -208,7 +216,7 @@
 }
 .gm-editor .cm-task {
 	accent-color: var(--accent);
-	margin: 0 6px 0 0;
+	margin: 0 2px 0 0;
 	vertical-align: -1px;
 	cursor: pointer;
 }
