@@ -48,20 +48,23 @@ it) and a domain on Cloudflare.
 
 1. **Configure**: in `wrangler.jsonc`, set `PUBLIC_URL` and the `routes`
    pattern to your domain.
-2. **Deploy**:
+2. **Deploy**, either from your fork with Cloudflare Workers Builds (root
+   directory `cloud`, build command `bun run build`, deploy command
+   `bun run deploy`), which redeploys on every push, or by hand:
    ```bash
    bun install
    bunx wrangler login
-   ./scripts/deploy.sh
+   bun run build && bun run deploy
    ```
-   The script creates the D1 database and KV namespace, applies migrations
-   and deploys. Re-run it to deploy updates.
+   The first deploy creates the D1 database and KV namespace; every deploy
+   applies database migrations.
 
 People sign in with GitHub's device flow (enter a code on github.com), using
 gitmind's public OAuth App, so there's nothing to register. For the usual
 redirect sign-in, create your own GitHub OAuth App with callback URL
-`https://YOUR-DOMAIN/auth/github/callback` and a client secret, then run
-`GITHUB_CLIENT_ID=... GITHUB_CLIENT_SECRET=... ./scripts/deploy.sh`.
+`https://YOUR-DOMAIN/auth/github/callback` and a client secret, put its
+client ID in `GITHUB_CLIENT_ID` in `wrangler.jsonc`, and run
+`bunx wrangler secret put GITHUB_CLIENT_SECRET`.
 
 Then sign in at your domain and follow its **Connect** page.
 

@@ -27,10 +27,10 @@
 	},
 	"migrations": [{ "tag": "v1", "new_sqlite_classes": ["Workspace"] }],
 
-	"d1_databases": [
-		{ "binding": "DB", "database_name": "gitmind", "database_id": "REPLACE_WITH_D1_ID", "migrations_dir": "migrations" }
-	],
-	"kv_namespaces": [{ "binding": "OAUTH_KV", "id": "REPLACE_WITH_KV_ID" }],
+	// No IDs: the first `wrangler deploy` creates the database and KV
+	// namespace, and later deploys keep using the ones the Worker is bound to.
+	"d1_databases": [{ "binding": "DB", "database_name": "gitmind", "migrations_dir": "migrations" }],
+	"kv_namespaces": [{ "binding": "OAUTH_KV" }],
 	"artifacts": [{ "binding": "ARTIFACTS", "namespace": "gitmind" }],
 
 	"routes": [{ "pattern": "gitmind.app", "custom_domain": true }]

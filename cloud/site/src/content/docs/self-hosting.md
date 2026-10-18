@@ -21,21 +21,26 @@ cd gitmind/cloud
 bun install && (cd site && bun install)
 # In wrangler.jsonc: set PUBLIC_URL and the routes pattern to your domain.
 bunx wrangler login
-./scripts/deploy.sh
+bun run build && bun run deploy
 ```
 
-The script builds the site, creates the D1 database and KV namespace, applies
-migrations and deploys. Re-run it to deploy updates.
+The first deploy creates the D1 database and KV namespace; every deploy
+applies database migrations. Run the same two commands to deploy updates.
+
+To deploy on every push instead, connect your fork in the Cloudflare
+dashboard (your Worker → Settings → Builds) with root directory `cloud`,
+build command `bun run build` and deploy command `bun run deploy`.
 
 ## Sign-in
 
 Out of the box, people sign in with GitHub's device flow (they enter a code on
 github.com), using gitmind's public OAuth App, so there's nothing to register.
 For the usual redirect sign-in, create a GitHub OAuth App with the callback URL
-`https://YOUR-DOMAIN/auth/github/callback` and run:
+`https://YOUR-DOMAIN/auth/github/callback`, put its client ID in
+`GITHUB_CLIENT_ID` in `wrangler.jsonc`, and store its secret:
 
 ```bash
-GITHUB_CLIENT_ID=... GITHUB_CLIENT_SECRET=... ./scripts/deploy.sh
+bunx wrangler secret put GITHUB_CLIENT_SECRET
 ```
 
 ## Laptops

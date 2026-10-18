@@ -4,10 +4,11 @@
   "description": "",
   "scripts": {
     "dev": "wrangler dev",
-    "deploy": "wrangler deploy",
+    "deploy": "wrangler deploy && wrangler d1 migrations apply DB --remote",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "types": "wrangler types"
+    "types": "wrangler types",
+    "build": "cd site && bun install --frozen-lockfile && bun run build"
   },
   "author": "",
   "license": "AGPL-3.0-only",
