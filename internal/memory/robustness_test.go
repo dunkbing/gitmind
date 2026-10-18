@@ -106,7 +106,7 @@ func TestConcurrentEditsKeepEveryChange(t *testing.T) {
 		}
 	}
 	if status := git(t, a.Store.Root, "status", "--porcelain"); status != "" {
-		t.Fatalf("uncommitted changes:\n%s", status)
+		t.Fatalf("uncommitted changes:\n%s\n%s\n%s", status, git(t, a.Store.Root, "diff", "HEAD"), git(t, a.Store.Root, "log", "--oneline", "-5"))
 	}
 }
 

@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -118,7 +119,7 @@ func TestCredentialsAndHelper(t *testing.T) {
 	if err := SaveCredentials(Credentials{Login: "octo", Token: "gho_test"}); err != nil {
 		t.Fatal(err)
 	}
-	if info, err := os.Stat(path); err != nil || info.Mode().Perm() != 0o600 {
+	if info, err := os.Stat(path); err != nil || (runtime.GOOS != "windows" && info.Mode().Perm() != 0o600) {
 		t.Fatalf("credentials file mode: %v, %v", info.Mode(), err)
 	}
 

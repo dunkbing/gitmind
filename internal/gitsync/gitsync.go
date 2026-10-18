@@ -72,6 +72,9 @@ func IsRepo(dir string) bool {
 // git settings, used for the clone and stored in the repository's own config
 // (e.g. a credential helper).
 func Init(ctx context.Context, dir, remote string, config ...string) error {
+	// Notes are written with LF endings; Git for Windows' default of
+	// converting them to CRLF on checkout would make every note look changed.
+	config = append([]string{"core.autocrlf=false"}, config...)
 	r := &Repo{Dir: dir}
 	if !IsRepo(dir) {
 		if remote != "" && isEmptyDir(dir) {
@@ -399,11 +402,15 @@ func (r *Repo) runRaw(ctx context.Context, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = r.Dir
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_MERGE_AUTOEDIT=no")
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return "", &gitError{args: args, out: strings.TrimSpace(string(out)), err: err}
+	// Warnings on stderr must not end up in output that gets parsed (e.g.
+	// a list of conflicted files); they're only reported with errors.
+	var stdout, stderr strings.Builder
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	if err := cmd.Run(); err != nil {
+		out := strings.TrimSpace(stderr.String() + "\n" + stdout.String())
+		return "", &gitError{args: args, out: out, err: err}
 	}
-	return string(out), nil
+	return stdout.String(), nil
 }
 
 // lock serializes git operations across every gitmind process sharing the

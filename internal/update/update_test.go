@@ -14,6 +14,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -76,7 +77,7 @@ func TestUpdate(t *testing.T) {
 	if data, _ := os.ReadFile(exe); string(data) != "#!/bin/sh\necho new\n" {
 		t.Errorf("binary = %q", data)
 	}
-	if info, _ := os.Stat(exe); info.Mode().Perm() != 0o755 {
+	if info, _ := os.Stat(exe); runtime.GOOS != "windows" && info.Mode().Perm() != 0o755 {
 		t.Errorf("mode = %v", info.Mode())
 	}
 	if leftovers, _ := filepath.Glob(filepath.Join(filepath.Dir(exe), ".gitmind-update-*")); len(leftovers) != 0 {
