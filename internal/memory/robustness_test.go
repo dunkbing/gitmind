@@ -15,9 +15,11 @@ import (
 	"golang.org/x/text/unicode/norm"
 )
 
+// git runs git in dir with a fixed identity, so tests don't depend on the
+// machine's git config (CI runners have none).
 func git(t *testing.T, dir string, args ...string) string {
 	t.Helper()
-	out, err := exec.Command("git", append([]string{"-C", dir}, args...)...).CombinedOutput()
+	out, err := exec.Command("git", append([]string{"-C", dir, "-c", "user.name=test", "-c", "user.email=test@test"}, args...)...).CombinedOutput()
 	if err != nil {
 		t.Fatalf("git %v: %v: %s", args, err, out)
 	}
@@ -259,7 +261,7 @@ func TestRecencySurvivesPull(t *testing.T) {
 		t.Fatal(err)
 	}
 	git(t, laptop.Store.Root, "add", "old-decision.md")
-	cmd := exec.Command("git", "-C", laptop.Store.Root, "commit", "-q", "-m", "old")
+	cmd := exec.Command("git", "-C", laptop.Store.Root, "-c", "user.name=test", "-c", "user.email=test@test", "commit", "-q", "-m", "old")
 	cmd.Env = append(os.Environ(), "GIT_AUTHOR_DATE=2024-03-01T12:00:00Z", "GIT_COMMITTER_DATE=2024-03-01T12:00:00Z")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("commit: %v: %s", err, out)
