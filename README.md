@@ -29,9 +29,11 @@ workspaces. Laptops sync with it through this CLI: `gitmind setup`, or
 ## Install
 
 ```bash
-go install github.com/dunkbing/gitmind@latest
+curl -fsSL https://gitmind.app/install.sh | sh    # or: go install github.com/dunkbing/gitmind@latest
 gitmind setup
 ```
+
+`gitmind update` installs the latest release later (`--check` only reports).
 
 `setup` asks where to keep your notes: [gitmind.app](https://gitmind.app),
 a private GitHub repository, a self-hosted server, or this computer only. For
@@ -157,6 +159,10 @@ line like `- depends on [[Auth service]]` records "depends on" as the relation.
 - macOS and Linux only (uses `flock`).
 
 ## Development
+
+Releases: push a tag like `v0.2.0`; the Release workflow builds macOS and Linux
+binaries (amd64 and arm64) and publishes them with `checksums.txt`, which
+`gitmind update` and the install script verify.
 
 The GitHub login uses the device flow of a GitHub OAuth App (device flow
 enabled, no client secret needed). Its client ID is public and set in

@@ -1,0 +1,37 @@
+name: Release
+
+# Push a tag like v0.2.0 to publish a release. `gitmind update` and
+# https://gitmind.app/install.sh install from the latest one.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go test ./...
+      - name: Build
+        run: |
+          mkdir -p dist
+          for target in darwin/amd64 darwin/arm64 linux/amd64 linux/arm64; do
+            os=${target%/*}; arch=${target#*/}
+            out=build/${os}_${arch}
+            mkdir -p "$out"
+            CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath \
+              -ldflags "-s -w -X main.version=${GITHUB_REF_NAME}" -o "$out/gitmind" .
+            cp README.md AGENT_MEMORY.md "$out/"
+            tar -C "$out" -czf "dist/gitmind_${os}_${arch}.tar.gz" gitmind README.md AGENT_MEMORY.md
+          done
+          (cd dist && sha256sum *.tar.gz > checksums.txt && cat checksums.txt)
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* --title "gitmind $GITHUB_REF_NAME" --generate-notes

@@ -28,6 +28,7 @@ import (
 	"github.com/dunkbing/gitmind/internal/memory"
 	"github.com/dunkbing/gitmind/internal/notes"
 	"github.com/dunkbing/gitmind/internal/server"
+	"github.com/dunkbing/gitmind/internal/update"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -72,6 +73,7 @@ Commands:
   reindex            rebuild the search index from the notes on disk
   search QUERY...    search notes
   recent [N]         list the N most recently changed notes (default 10)
+  update [--check]   update gitmind to the latest release (--check only reports)
   version            print the version
 
 The notes directory defaults to $GITMIND_DIR, or ~/.gitmind.
@@ -107,6 +109,11 @@ func main() {
 		err = authCmd(ctx, args)
 	case "setup":
 		err = setupCmd(ctx, *dir, args)
+	case "update":
+		fs := flag.NewFlagSet("update", flag.ExitOnError)
+		check := fs.Bool("check", false, "only report whether an update is available")
+		fs.Parse(args)
+		err = updateCmd(ctx, *check)
 	case "agents":
 		fs := flag.NewFlagSet("agents", flag.ExitOnError)
 		yes := fs.Bool("yes", false, "make every change without asking")
@@ -304,6 +311,36 @@ func credentialHelper(ctx context.Context, op string) error {
 		return err
 	}
 	return github.CredentialHelper(op, bytes.NewReader(data), os.Stdout)
+}
+
+// updateCmd replaces this binary with the latest GitHub release.
+func updateCmd(ctx context.Context, checkOnly bool) error {
+	u := update.New(version)
+	r, newer, err := u.Latest(ctx)
+	if err != nil {
+		return err
+	}
+	if !newer {
+		fmt.Printf("gitmind %s is up to date (latest release: %s).\n", version, r.Tag)
+		return nil
+	}
+	if checkOnly {
+		fmt.Printf("gitmind %s is available (you have %s). Run `gitmind update` to install it.\n", r.Tag, version)
+		return nil
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
+		exe = resolved
+	}
+	fmt.Printf("Updating gitmind %s → %s…\n", version, r.Tag)
+	if err := u.Apply(ctx, r, exe); err != nil {
+		return err
+	}
+	fmt.Printf("✓ Updated %s to %s. Restart Claude Code or Codex to use it there.\n", exe, r.Tag)
+	return nil
 }
 
 func initRepo(ctx context.Context, dir string, args []string) error {

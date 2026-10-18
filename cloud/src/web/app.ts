@@ -312,7 +312,7 @@ web.get("/connect", async (c) => {
 		<h3>Codex</h3><pre class="box">[mcp_servers.gitmind]\nurl = "${escape(mcp)}"</pre><p>in <code>~/.codex/config.toml</code>, then <code>codex mcp login gitmind</code>.</p>
 		<h3>Local, offline-capable sync on your laptops</h3>
 		<p>The <a href="https://github.com/dunkbing/gitmind">gitmind CLI</a> keeps a git clone of a workspace on your machine and serves it to local agents, syncing with this server:</p>
-		<pre class="box">go install github.com/dunkbing/gitmind@latest\n${escape(setupCommand(c.env))}</pre>
+		<pre class="box">curl -fsSL https://gitmind.app/install.sh | sh\n${escape(setupCommand(c.env))}</pre>
 		<h3>Plain git</h3><p>Each workspace is a git repository. Its settings page shows how to clone it.</p>`,
 	);
 });

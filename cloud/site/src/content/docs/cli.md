@@ -13,9 +13,17 @@ background.
 ## Install and connect
 
 ```bash
-go install github.com/dunkbing/gitmind@latest
+curl -fsSL https://gitmind.app/install.sh | sh
 gitmind setup
 ```
+
+The script installs the latest release for macOS or Linux into `~/.local/bin`,
+after checking its checksum. With Go installed you can use
+`go install github.com/dunkbing/gitmind@latest` instead.
+
+Run `gitmind update` now and then to get the latest release (`--check` only
+tells you whether there is one). Restart Claude Code or Codex afterwards so
+they use the new version.
 
 `setup` asks where to keep your notes:
 
@@ -71,5 +79,5 @@ Edits you make by hand (in Obsidian, say) are committed on the next sync.
 ## Commands
 
 ```
-gitmind [--dir DIR] setup | auth | serve | context | nudge | init REMOTE | sync | reindex | search QUERY | recent [N]
+gitmind [--dir DIR] setup | agents | update | auth | serve | context | nudge | init REMOTE | sync | reindex | search QUERY | recent [N] | version
 ```
