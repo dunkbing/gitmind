@@ -104,14 +104,33 @@ func login(ctx context.Context) (github.Credentials, error) {
 // setupCmd logs in if needed, then connects the notes directory to a GitHub
 // repository, creating it (private) when it doesn't exist yet.
 func setupCmd(ctx context.Context, dir string, args []string) error {
+	agents, err := setupNotes(ctx, dir, args)
+	if err != nil || !agents.enabled {
+		return err
+	}
+	a, err := newAgentSetup(agents.assumeYes)
+	if err != nil {
+		return err
+	}
+	return a.Run(ctx)
+}
+
+type agentChoice struct{ enabled, assumeYes bool }
+
+// setupNotes connects the notes directory to where the notes live, and
+// reports whether to go on to configure the coding agents.
+func setupNotes(ctx context.Context, dir string, args []string) (agentChoice, error) {
 	fs := flag.NewFlagSet("setup", flag.ExitOnError)
 	server := fs.String("server", defaultServer(), "gitmind server to sync with; set it for a self-hosted server")
 	workspace := fs.String("workspace", "", "workspace to sync (default: your personal one)")
 	useGitHub := fs.Bool("github", false, "sync with a repository on your GitHub account instead of a gitmind server")
 	local := fs.Bool("local", false, "keep notes on this computer only, without syncing")
+	yes := fs.Bool("yes", false, "add gitmind to Claude Code and Codex without asking")
+	noAgents := fs.Bool("no-agents", false, "don't offer to add gitmind to Claude Code and Codex")
 	name := fs.String("repo", "gitmind-notes", "with --github: NAME under your account, or OWNER/NAME")
 	public := fs.Bool("public", false, "with --github: create the repository as public (default private)")
 	fs.Parse(args)
+	choice := agentChoice{enabled: !*noAgents, assumeYes: *yes}
 
 	// Flags decide; otherwise ask in a terminal, and default to the cloud in
 	// scripts.
@@ -128,7 +147,7 @@ func setupCmd(ctx context.Context, dir string, args []string) error {
 	case isTerminal():
 		p, u, err := chooseProvider(ctx, stdin, os.Stdout)
 		if err != nil {
-			return err
+			return agentChoice{}, err
 		}
 		provider = p
 		if u != "" {
@@ -139,16 +158,16 @@ func setupCmd(ctx context.Context, dir string, args []string) error {
 	case providerLocal:
 		if !gitsync.IsRepo(dir) {
 			if err := gitsync.Init(ctx, dir, ""); err != nil {
-				return err
+				return agentChoice{}, err
 			}
 		}
 		fmt.Printf("✓ Notes are in %s, on this computer only.\n", dir)
 		fmt.Println("  Run `gitmind setup` again any time to start syncing them.")
-		return nil
+		return choice, nil
 	case providerCloud:
-		return cloudSetup(ctx, dir, defaultServer(), *workspace)
+		return choice, cloudSetup(ctx, dir, defaultServer(), *workspace)
 	case providerServer:
-		return cloudSetup(ctx, dir, *server, *workspace)
+		return choice, cloudSetup(ctx, dir, *server, *workspace)
 	}
 
 	creds, err := github.LoadCredentials()
@@ -160,16 +179,16 @@ func setupCmd(ctx context.Context, dir string, args []string) error {
 	}
 	if err != nil {
 		if creds, err = login(ctx); err != nil {
-			return err
+			return agentChoice{}, err
 		}
 	}
 	exe, err := os.Executable()
 	if err != nil {
-		return err
+		return agentChoice{}, err
 	}
 	repo, created, err := connectRepo(ctx, github.New(clientID(), creds.Token), creds.Login, *name, !*public, dir, credentialHelperConfig(exe))
 	if err != nil {
-		return err
+		return agentChoice{}, err
 	}
 	if created {
 		fmt.Printf("✓ Created %s repository %s\n", visibility(repo.Private), repo.HTMLURL)
@@ -179,7 +198,7 @@ func setupCmd(ctx context.Context, dir string, args []string) error {
 	fmt.Printf("✓ Notes are in %s and sync with GitHub automatically.\n", dir)
 	fmt.Println("\nNext, add gitmind to your agents (see the README):")
 	fmt.Println("  claude mcp add --scope user gitmind -- gitmind")
-	return nil
+	return choice, nil
 }
 
 // connectRepo finds or creates the GitHub repository and makes dir a clone of

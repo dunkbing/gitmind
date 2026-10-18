@@ -50,6 +50,10 @@ gitmind itself, registered as git's credential helper for that repository only.
 
 These flags skip the question; without a terminal, setup uses gitmind.app.
 
+`setup` then offers to add gitmind to Claude Code and Codex: the MCP server,
+the Claude Code hooks below, and the memory instructions, asking before each
+change. `gitmind agents` does just that step again. To do it by hand instead:
+
 ### Claude Code
 
 ```bash

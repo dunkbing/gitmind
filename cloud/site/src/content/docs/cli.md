@@ -35,35 +35,26 @@ workspace. Without a terminal, setup uses gitmind.app.
 
 ## Add it to your agents
 
-```bash
-claude mcp add --scope user gitmind -- gitmind
-```
+At the end, `setup` offers to add gitmind to the coding agents it finds,
+asking before each change:
 
-For Codex, in `~/.codex/config.toml`:
+- **Claude Code**: registers the gitmind MCP server for all projects, adds
+  the two hooks below to `~/.claude/settings.json` (keeping a backup), and adds
+  memory instructions to `~/.claude/CLAUDE.md`.
+- **Codex**: adds the MCP server to `~/.codex/config.toml` and the
+  instructions to `~/.codex/AGENTS.md`.
 
-```toml
-[mcp_servers.gitmind]
-command = "gitmind"
-```
+Anything already in place is left alone. Run `gitmind agents` any time to do
+this again (for example after installing Codex), or `gitmind agents --yes` to
+skip the questions. Check the result with `claude mcp list`.
 
-## Hooks for Claude Code
+The hooks it adds:
 
-Two hooks make memory automatic. In `~/.claude/settings.json`:
-
-```json
-{
-  "hooks": {
-    "SessionStart": [{ "hooks": [{ "type": "command", "command": "gitmind context", "timeout": 30 }] }],
-    "Stop": [{ "hooks": [{ "type": "command", "command": "gitmind nudge", "timeout": 10 }] }]
-  }
-}
-```
-
-- **`gitmind context`** loads pinned notes and an index of the current
-  project's notes (the project is the git repository's name) at the start of
-  every session.
-- **`gitmind nudge`** reminds the agent once to save what it learned, after a
-  stretch of 10 or more tool calls with no memory write.
+- **`gitmind context`** (SessionStart) loads pinned notes and an index of the
+  current project's notes (the project is the git repository's name) at the
+  start of every session.
+- **`gitmind nudge`** (Stop) reminds the agent once to save what it learned,
+  after a stretch of 10 or more tool calls with no memory write.
 
 ## Syncing
 

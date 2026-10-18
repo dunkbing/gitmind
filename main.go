@@ -47,7 +47,11 @@ Commands:
                        --github        sync with a private repository on your
                                        GitHub account instead of a server
                        --local         keep notes on this computer only
-                     Without these, setup asks where to keep the notes.
+                     Without these, setup asks where to keep the notes. It then
+                     offers to add gitmind to Claude Code and Codex (--yes
+                     accepts, --no-agents skips).
+  agents             add gitmind to Claude Code and Codex: MCP server, Claude
+                     Code hooks, and memory instructions (asks first; --yes)
                        --repo NAME     with --github: NAME or OWNER/NAME
                                        (default gitmind-notes)
                        --public        with --github: create it public
@@ -103,6 +107,14 @@ func main() {
 		err = authCmd(ctx, args)
 	case "setup":
 		err = setupCmd(ctx, *dir, args)
+	case "agents":
+		fs := flag.NewFlagSet("agents", flag.ExitOnError)
+		yes := fs.Bool("yes", false, "make every change without asking")
+		fs.Parse(args)
+		var a *agentSetup
+		if a, err = newAgentSetup(*yes); err == nil {
+			err = a.Run(ctx)
+		}
 	case "credential":
 		// git credential helper protocol; see credentialHelperConfig.
 		if len(args) > 0 {
