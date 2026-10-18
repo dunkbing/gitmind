@@ -7,10 +7,18 @@ interface Props {
 	title: string;
 	description: string;
 	jsonLd?: Record<string, unknown>;
+	/** "article" for docs pages, with their last-modified date. */
+	type?: "website" | "article";
+	modified?: Date;
+	/** Alternate Markdown version of the page, for AI assistants. */
+	markdown?: string;
+	noindex?: boolean;
 }
-const { title, description, jsonLd } = Astro.props;
+const { title, description, jsonLd, type = "website", modified, markdown, noindex } = Astro.props;
 const canonical = new URL(Astro.url.pathname, Astro.site).toString();
-const fullTitle = title === "gitmind" ? "gitmind: one memory for all your AI agents" : `${title} · gitmind`;
+const fullTitle = title === "gitmind" ? "gitmind: shared memory for Claude, ChatGPT, Claude Code and Codex" : `${title} · gitmind`;
+const image = new URL("/og.png", Astro.site).toString();
+const imageAlt = "gitmind: one memory for every AI you work with. Markdown notes in a git repository you own, shared over MCP.";
 ---
 <!doctype html>
 <html lang="en">
@@ -19,21 +27,33 @@ const fullTitle = title === "gitmind" ? "gitmind: one memory for all your AI age
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<title>{fullTitle}</title>
 		<meta name="description" content={description} />
+		{noindex && <meta name="robots" content="noindex" />}
 		<link rel="canonical" href={canonical} />
 		<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
 		<link rel="icon" href="/favicon.ico" sizes="32x32" />
 		<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
 		<link rel="sitemap" href="/sitemap-index.xml" />
 		<link rel="alternate" type="text/plain" href="/llms.txt" title="LLM-friendly index" />
+		{markdown && <link rel="alternate" type="text/markdown" href={markdown} title="This page as Markdown" />}
 		<link rel="preload" href="/fonts/ia-writer-quattro-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin />
 		<link rel="preload" href="/fonts/ibm-plex-serif-latin-500-normal.woff2" as="font" type="font/woff2" crossorigin />
-		<meta property="og:type" content="website" />
+		<meta property="og:type" content={type} />
 		<meta property="og:site_name" content="gitmind" />
+		<meta property="og:locale" content="en_US" />
 		<meta property="og:title" content={fullTitle} />
 		<meta property="og:description" content={description} />
 		<meta property="og:url" content={canonical} />
-		<meta property="og:image" content={new URL("/icon-512.png", Astro.site).toString()} />
-		<meta name="twitter:card" content="summary" />
+		<meta property="og:image" content={image} />
+		<meta property="og:image:type" content="image/png" />
+		<meta property="og:image:width" content="1200" />
+		<meta property="og:image:height" content="630" />
+		<meta property="og:image:alt" content={imageAlt} />
+		{modified && <meta property="article:modified_time" content={modified.toISOString()} />}
+		<meta name="twitter:card" content="summary_large_image" />
+		<meta name="twitter:title" content={fullTitle} />
+		<meta name="twitter:description" content={description} />
+		<meta name="twitter:image" content={image} />
+		<meta name="twitter:image:alt" content={imageAlt} />
 		<meta name="theme-color" content="#f5f7f6" media="(prefers-color-scheme: light)" />
 		<meta name="theme-color" content="#0d1311" media="(prefers-color-scheme: dark)" />
 		{jsonLd && <script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />}
@@ -53,7 +73,7 @@ const fullTitle = title === "gitmind" ? "gitmind: one memory for all your AI age
 				<slot />
 			</main>
 			<footer class="mx-auto max-w-[760px] border-t border-line px-5 py-8 text-[13px] text-muted md:px-10">
-				gitmind is open source (AGPL-3.0). <a href="https://github.com/dunkbing/gitmind">Source on GitHub</a> · <a href="/docs/self-hosting/">Self-host it</a> · <a href="/llms.txt">llms.txt</a>
+				gitmind is open source (AGPL-3.0). <a href="https://github.com/dunkbing/gitmind">Source on GitHub</a> · <a href="/docs/self-hosting/">Self-host it</a> · <a href="/docs/compare/">Compare</a> · <a href="/docs/faq/">FAQ</a> · <a href="/llms.txt">llms.txt</a>
 			</footer>
 		</div>
 	</body>

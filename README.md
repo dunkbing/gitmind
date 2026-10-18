@@ -158,12 +158,11 @@ line like `- depends on [[Auth service]]` records "depends on" as the relation.
 - Keyword search only, no embeddings yet.
 - "Updated" times come from git: the last commit touching a note, or the file
   time while it has uncommitted edits.
-- macOS and Linux only (uses `flock`).
 
 ## Development
 
-Releases: push a tag like `v0.2.0`; the Release workflow builds macOS and Linux
-binaries (amd64 and arm64) and publishes them with `checksums.txt`, which
+Releases: push a tag like `v0.2.0`; the Release workflow builds macOS, Linux and
+Windows binaries (amd64 and arm64) and publishes them with `checksums.txt`, which
 `gitmind update` and the install script verify.
 
 The GitHub login uses the device flow of a GitHub OAuth App (device flow

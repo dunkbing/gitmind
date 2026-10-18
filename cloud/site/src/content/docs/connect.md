@@ -1,5 +1,6 @@
 ---
 title: Connect your AI apps
+metaTitle: "Connect claude.ai, ChatGPT, Claude Code and Codex to gitmind over MCP"
 description: "Add gitmind to claude.ai, Claude Desktop and mobile, ChatGPT, Claude Code and Codex."
 section: Getting started
 order: 3

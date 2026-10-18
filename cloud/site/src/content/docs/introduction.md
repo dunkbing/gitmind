@@ -15,7 +15,7 @@ as short Markdown notes, and every AI app you use reads from the same notes:
 - **claude.ai** on the web, Claude Desktop and Claude mobile, and **ChatGPT**,
   through a connector to `https://gitmind.app/mcp`.
 - **Claude Code** and **Codex**, through the same endpoint, or locally through
-  the `gitmind` CLI, which keeps a synced clone on your laptop.
+  the [`gitmind` CLI](/docs/cli/), which keeps a synced clone on your laptop.
 
 ## What makes it different
 
@@ -24,10 +24,12 @@ as short Markdown notes, and every AI app you use reads from the same notes:
   it in Obsidian, review its history and leave with it.
 - **Notes are structured, not transcripts.** Agents write short, standalone
   facts like `- [decision] use Postgres over MySQL #db`, link related notes
-  with `[[wiki links]]`, and keep a history when facts change.
+  with `[[wiki links]]`, and keep a history when facts change. See
+  [Writing notes](/docs/notes/).
 - **It runs no LLM of its own.** The agent you're already using decides what
   to save; gitmind stores, indexes, searches and syncs. No extra API keys, no
   proxy between you and your AI provider.
-- **Open source.** AGPL-3.0, and self-hostable on Cloudflare.
+- **Open source.** AGPL-3.0, and [self-hostable](/docs/self-hosting/) on Cloudflare.
 
-Next: [Quickstart](/docs/quickstart/).
+Next: [Quickstart](/docs/quickstart/). Curious how this differs from built-in
+memory, Basic Memory or Mem0? See [How gitmind compares](/docs/compare/).

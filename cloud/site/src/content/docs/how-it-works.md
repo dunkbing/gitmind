@@ -38,4 +38,5 @@ immediately.
 ## The format
 
 Notes are plain Markdown with YAML frontmatter, compatible with Basic Memory and
-Obsidian. The cloud and the CLI share one format, byte for byte.
+Obsidian. The cloud and the [CLI](/docs/cli/) share one format, byte for byte.
+See [Writing notes](/docs/notes/) for the conventions agents follow.

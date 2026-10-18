@@ -18,4 +18,4 @@ order: 11
 - **No AI in the middle.** gitmind doesn't call an LLM or proxy your
   conversations. Agents send it only what they choose to save or search.
 - **Open source.** The code that runs gitmind.app is public, so you can check
-  all of this.
+  all of this, or [run your own](/docs/self-hosting/).

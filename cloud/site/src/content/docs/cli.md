@@ -1,5 +1,6 @@
 ---
 title: CLI and local sync
+metaTitle: "Persistent memory for Claude Code and Codex: CLI and local sync"
 description: "Keep a synced git clone of your memory on each machine, serve it to local agents, and add recall and save hooks to Claude Code."
 section: Guides
 order: 4

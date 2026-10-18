@@ -1,20 +1,9 @@
 ---
 import Base from "../layouts/Base.astro";
+import { DEFINITION, REPO, SITE } from "../lib/site.mjs";
 
 const description =
 	"gitmind gives Claude, ChatGPT, Claude Code and Codex one shared memory: Markdown notes in a git repository you own, served to every AI app over MCP.";
-const jsonLd = {
-	"@context": "https://schema.org",
-	"@type": "SoftwareApplication",
-	name: "gitmind",
-	applicationCategory: "DeveloperApplication",
-	operatingSystem: "Web, macOS, Linux",
-	description,
-	url: "https://gitmind.app/",
-	license: "https://www.gnu.org/licenses/agpl-3.0.html",
-	codeRepository: "https://github.com/dunkbing/gitmind",
-	offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
-};
 const features = [
 	["Works in every AI app", "One MCP endpoint for claude.ai on web, desktop and mobile, ChatGPT, Claude Code and Codex. Your agents remember the same things everywhere."],
 	["Your memory is a git repo", "Every note is Markdown, every change is a commit. Clone it, read it in Obsidian, review its history, take it with you."],
@@ -23,14 +12,97 @@ const features = [
 	["Bring your history", "Import Claude and ChatGPT exports, or a folder of Markdown notes, and start from what you already know."],
 	["Open source", "AGPL-3.0. Use gitmind.app, or self-host it on your own Cloudflare account in a few minutes."],
 ];
+// Questions people ask AI search about agent memory. Answers are HTML; the
+// FAQPage structured data gets them as plain text.
+const faq = [
+	[
+		"What is MCP memory?",
+		'MCP (Model Context Protocol) is the open standard AI apps use to call outside tools. An MCP memory server gives an agent tools to search, read and save notes, so it remembers things between conversations. gitmind is one: the agent decides what to save, and gitmind stores, indexes and syncs it. See the <a href="/docs/tools/">tools it provides</a>.',
+	],
+	[
+		"How do I give Claude Code persistent memory?",
+		'Run <code>claude mcp add --transport http --scope user gitmind https://gitmind.app/mcp</code>, or install the gitmind CLI and run <code>gitmind setup</code>. The CLI keeps a synced local clone of your notes and adds hooks that load a project\'s notes at the start of every session and remind the agent to save what it learned. See <a href="/docs/cli/">CLI and local sync</a>.',
+	],
+	[
+		"Can Claude and ChatGPT share the same memory?",
+		'Yes. Add <code>https://gitmind.app/mcp</code> as a custom connector in claude.ai and in ChatGPT, and sign in to the same account in both. They read and write the same notes, as do Claude Code and Codex. See <a href="/docs/connect/">Connect your AI apps</a>.',
+	],
+	[
+		"Is my memory private?",
+		'Your personal workspace is readable only by you; team workspaces only by their members. Every app signs in with OAuth after a consent page, gitmind runs no LLM and never sees your conversations, only what an agent chooses to save or search, and it refuses to store notes that look like secrets. See <a href="/docs/security/">Security and privacy</a>.',
+	],
+	[
+		"Can I self-host gitmind?",
+		'Yes. gitmind is open source under AGPL-3.0 and deploys to your own Cloudflare account (Workers Paid plan) with a few commands. Or skip the server entirely: the CLI can sync notes through a private GitHub repository. See <a href="/docs/self-hosting/">Self-hosting</a>.',
+	],
+	[
+		"How is gitmind different from ChatGPT or Claude's built-in memory?",
+		'Built-in memory belongs to one app and is managed by its provider. gitmind is one memory shared by every AI app and machine you use, stored as Markdown files in git that you can read, edit, version, export and share with a team. See <a href="/docs/compare/">how gitmind compares</a>.',
+	],
+	["Is gitmind free?", 'Yes. gitmind.app is free to use with a GitHub sign-in, and the code is open source.'],
+];
+const text = (html: string) => html.replace(/<[^>]+>/g, "").replace(/&#39;/g, "'");
+const jsonLd = {
+	"@context": "https://schema.org",
+	"@graph": [
+		{
+			"@type": "Organization",
+			"@id": `${SITE}/#organization`,
+			name: "gitmind",
+			url: `${SITE}/`,
+			logo: `${SITE}/icon-512.png`,
+			sameAs: [REPO],
+		},
+		{
+			"@type": "WebSite",
+			"@id": `${SITE}/#website`,
+			name: "gitmind",
+			url: `${SITE}/`,
+			description,
+			inLanguage: "en",
+			publisher: { "@id": `${SITE}/#organization` },
+		},
+		{
+			"@type": "SoftwareApplication",
+			"@id": `${SITE}/#software`,
+			name: "gitmind",
+			applicationCategory: "DeveloperApplication",
+			applicationSubCategory: "AI agent memory (MCP server)",
+			operatingSystem: "Web, macOS, Linux, Windows",
+			description: DEFINITION,
+			url: `${SITE}/`,
+			image: `${SITE}/og.png`,
+			downloadUrl: `${REPO}/releases`,
+			installUrl: `${SITE}/docs/quickstart/`,
+			softwareHelp: `${SITE}/docs/`,
+			license: "https://www.gnu.org/licenses/agpl-3.0.html",
+			isAccessibleForFree: true,
+			publisher: { "@id": `${SITE}/#organization` },
+			featureList: features.map(([title]) => title),
+			offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
+		},
+		{
+			"@type": "SoftwareSourceCode",
+			name: "gitmind",
+			codeRepository: REPO,
+			programmingLanguage: ["Go", "TypeScript"],
+			license: "https://www.gnu.org/licenses/agpl-3.0.html",
+			targetProduct: { "@id": `${SITE}/#software` },
+		},
+		{
+			"@type": "FAQPage",
+			mainEntity: faq.map(([q, a]) => ({ "@type": "Question", name: q, acceptedAnswer: { "@type": "Answer", text: text(a) } })),
+		},
+	],
+};
 ---
 <Base title="gitmind" description={description} jsonLd={jsonLd}>
 	<section class="pt-4 md:pt-10">
 		<p class="mb-5 text-[13px] uppercase tracking-[0.1em] text-muted">Memory for AI agents</p>
 		<h1 class="text-[40px] leading-[1.1] md:text-[52px]">One memory for every AI you work with.</h1>
 		<p class="mt-6 max-w-[580px] text-[17px] text-muted">
-			gitmind keeps what your agents learn (decisions, preferences, gotchas, how things are set up) as notes in a git repository you own,
-			and gives every AI app the same memory: Claude, ChatGPT, Claude Code and Codex.
+			gitmind is an open-source memory for AI agents. It keeps what your agents learn (decisions, preferences, gotchas, how things are set up)
+			as Markdown notes in a git repository you own, and gives every AI app the same memory over MCP: Claude, ChatGPT, Claude Code and Codex.
 		</p>
 		<div class="mt-8 flex flex-wrap gap-3">
 			<a href="/app" class="rounded-md bg-accent px-4 py-2.5 text-accent-ink no-underline hover:opacity-90">Start with GitHub</a>
@@ -38,7 +110,7 @@ const features = [
 		</div>
 	</section>
 
-	<section class="mt-16 rounded-xl border border-line bg-surface p-5 font-mono text-[13px] leading-relaxed md:p-6">
+	<section aria-label="Setup" class="mt-16 rounded-xl border border-line bg-surface p-5 font-mono text-[13px] leading-relaxed md:p-6">
 		<p class="text-muted"># claude.ai, ChatGPT: add a connector with this URL</p>
 		<p>https://gitmind.app/mcp</p>
 		<p class="mt-4 text-muted"># Claude Code</p>
@@ -48,10 +120,11 @@ const features = [
 		<p>gitmind setup</p>
 	</section>
 
-	<section class="mt-16 grid gap-x-10 gap-y-8 md:grid-cols-2">
+	<section class="mt-16 grid gap-x-10 gap-y-8 md:grid-cols-2" aria-labelledby="features">
+		<h2 id="features" class="sr-only">Features</h2>
 		{features.map(([title, body]) => (
 			<div>
-				<h2 class="text-[19px]">{title}</h2>
+				<h3 class="text-[19px]">{title}</h3>
 				<p class="mt-2 text-muted">{body}</p>
 			</div>
 		))}
@@ -65,5 +138,18 @@ const features = [
 			<li><strong class="text-ink">Keep what matters.</strong> When something is worth remembering, the agent writes it down as a short fact. Next time, in any app or on any machine, it already knows.</li>
 		</ol>
 		<p class="mt-8"><a href="/docs/how-it-works/">How gitmind works under the hood →</a></p>
+	</section>
+
+	<section class="mt-16" aria-labelledby="faq">
+		<h2 id="faq" class="text-[26px]">Questions</h2>
+		<div class="mt-5 divide-y divide-line border-y border-line">
+			{faq.map(([q, a]) => (
+				<div class="py-5">
+					<h3 class="text-[18px]">{q}</h3>
+					<p class="mt-2 text-muted [&_code]:font-mono [&_code]:text-[13px]" set:html={a} />
+				</div>
+			))}
+		</div>
+		<p class="mt-8"><a href="/docs/faq/">More questions and answers →</a></p>
 	</section>
 </Base>

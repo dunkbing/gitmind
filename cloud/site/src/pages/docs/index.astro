@@ -1,13 +1,33 @@
 ---
 import { getCollection } from "astro:content";
 import Base from "../../layouts/Base.astro";
+import { SITE } from "../../lib/site.mjs";
 
 const docs = (await getCollection("docs")).sort((a, b) => a.data.order - b.data.order);
 const sections = ["Getting started", "Guides", "Reference"] as const;
+const jsonLd = {
+	"@context": "https://schema.org",
+	"@graph": [
+		{
+			"@type": "CollectionPage",
+			name: "gitmind documentation",
+			url: `${SITE}/docs/`,
+			isPartOf: { "@type": "WebSite", "@id": `${SITE}/#website`, name: "gitmind", url: `${SITE}/` },
+			hasPart: docs.map((d) => ({ "@type": "TechArticle", headline: d.data.title, url: `${SITE}/docs/${d.id}/` })),
+		},
+		{
+			"@type": "BreadcrumbList",
+			itemListElement: [
+				{ "@type": "ListItem", position: 1, name: "gitmind", item: `${SITE}/` },
+				{ "@type": "ListItem", position: 2, name: "Docs", item: `${SITE}/docs/` },
+			],
+		},
+	],
+};
 ---
-<Base title="Documentation" description="Set up gitmind, connect your AI apps, sync notes with the CLI, work in teams, and self-host it.">
+<Base title="Documentation" description="gitmind docs: set up shared AI memory, connect claude.ai, ChatGPT, Claude Code and Codex over MCP, sync notes with the CLI, work in teams, and self-host it." jsonLd={jsonLd}>
 	<h1 class="text-[38px]">Documentation</h1>
-	<p class="mt-4 text-[17px] text-muted">Everything about using, connecting and self-hosting gitmind.</p>
+	<p class="mt-4 text-[17px] text-muted">Everything about using, connecting and self-hosting gitmind, the shared memory for your AI agents. New here? Start with the <a href="/docs/introduction/">introduction</a> or jump to the <a href="/docs/quickstart/">quickstart</a>.</p>
 	{sections.map((s) => (
 		<section class="mt-10">
 			<h2 class="text-[13px] font-sans uppercase tracking-[0.08em] text-muted">{s}</h2>

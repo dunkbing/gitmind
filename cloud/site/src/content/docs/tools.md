@@ -25,4 +25,5 @@ take an optional `workspace` (a team's slug).
 | `sync_memory` | Pull and push now (CLI only). |
 
 Notes can be identified by path (`ops/runbook.md`), permalink (`ops/runbook`)
-or exact title.
+or exact title. For the note format these tools read and write, see
+[Writing notes](/docs/notes/).

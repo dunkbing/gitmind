@@ -1,6 +1,7 @@
 ---
 import { getCollection, render } from "astro:content";
 import Base from "../../layouts/Base.astro";
+import { lastModified, REPO, SITE } from "../../lib/site.mjs";
 
 export async function getStaticPaths() {
 	const docs = (await getCollection("docs")).sort((a, b) => a.data.order - b.data.order);
@@ -9,29 +10,74 @@ export async function getStaticPaths() {
 const { entry, prev, next } = Astro.props;
 const { Content } = await render(entry);
 const url = new URL(Astro.url.pathname, Astro.site).toString();
+const source = `src/content/docs/${entry.id}.md`;
+const modified = lastModified(source);
+
+// A page made of "## Question" sections (the FAQ) is also marked up as a FAQPage.
+const plain = (md: string) =>
+	md
+		.replace(/```[\s\S]*?```/g, "")
+		.replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+		.replace(/[`*]/g, "")
+		.replace(/\s+/g, " ")
+		.trim();
+const questions =
+	entry.id === "faq"
+		? (entry.body ?? "")
+				.split(/^## /m)
+				.slice(1)
+				.map((s) => {
+					const [q, ...rest] = s.split("\n");
+					return { "@type": "Question", name: q.trim(), acceptedAnswer: { "@type": "Answer", text: plain(rest.join("\n")) } };
+				})
+		: [];
+
 const jsonLd = {
 	"@context": "https://schema.org",
 	"@graph": [
-		{ "@type": "TechArticle", headline: entry.data.title, description: entry.data.description, url, isPartOf: { "@type": "WebSite", name: "gitmind", url: "https://gitmind.app/" } },
+		{
+			"@type": "TechArticle",
+			headline: entry.data.title,
+			description: entry.data.description,
+			url,
+			mainEntityOfPage: url,
+			inLanguage: "en",
+			articleSection: entry.data.section,
+			image: `${SITE}/og.png`,
+			...(modified && { dateModified: modified.toISOString() }),
+			author: { "@type": "Organization", "@id": `${SITE}/#organization`, name: "gitmind", url: `${SITE}/` },
+			publisher: { "@type": "Organization", "@id": `${SITE}/#organization`, name: "gitmind", url: `${SITE}/` },
+			isPartOf: { "@type": "WebSite", "@id": `${SITE}/#website`, name: "gitmind", url: `${SITE}/` },
+			about: { "@type": "SoftwareApplication", "@id": `${SITE}/#software`, name: "gitmind" },
+		},
 		{
 			"@type": "BreadcrumbList",
 			itemListElement: [
-				{ "@type": "ListItem", position: 1, name: "Docs", item: "https://gitmind.app/docs/" },
-				{ "@type": "ListItem", position: 2, name: entry.data.title, item: url },
+				{ "@type": "ListItem", position: 1, name: "gitmind", item: `${SITE}/` },
+				{ "@type": "ListItem", position: 2, name: "Docs", item: `${SITE}/docs/` },
+				{ "@type": "ListItem", position: 3, name: entry.data.title, item: url },
 			],
 		},
+		...(questions.length ? [{ "@type": "FAQPage", mainEntity: questions }] : []),
 	],
 };
+const dateLabel = modified?.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric", timeZone: "UTC" });
 ---
-<Base title={entry.data.title} description={entry.data.description} jsonLd={jsonLd}>
-	<p class="text-[13px] uppercase tracking-[0.08em] text-muted">{entry.data.section}</p>
+<Base title={entry.data.metaTitle ?? entry.data.title} description={entry.data.description} jsonLd={jsonLd} type="article" modified={modified} markdown={`/docs/${entry.id}.md`}>
+	<nav aria-label="Breadcrumb" class="text-[13px] uppercase tracking-[0.08em] text-muted">
+		<a href="/docs/" class="text-muted no-underline hover:text-ink">Docs</a> <span aria-hidden="true">/</span> {entry.data.section}
+	</nav>
 	<article class="prose mt-3 max-w-none prose-headings:scroll-mt-20">
 		<h1 class="!mb-3 !text-[36px]">{entry.data.title}</h1>
 		<p class="!mt-0 text-[17px] text-muted">{entry.data.description}</p>
 		<Content />
 	</article>
-	<nav class="mt-14 flex justify-between gap-4 border-t border-line pt-6 text-[14px]">
-		{prev ? <a href={`/docs/${prev.id}/`} class="no-underline">← {prev.data.title}</a> : <span />}
-		{next && <a href={`/docs/${next.id}/`} class="no-underline">{next.data.title} →</a>}
+	<p class="mt-10 text-[13px] text-muted">
+		{modified && <>Last updated <time datetime={modified.toISOString()}>{dateLabel}</time> · </>}
+		<a href={`${REPO}/blob/main/cloud/site/${source}`}>Edit this page on GitHub</a>
+	</p>
+	<nav aria-label="Previous and next page" class="mt-6 flex justify-between gap-4 border-t border-line pt-6 text-[14px]">
+		{prev ? <a href={`/docs/${prev.id}/`} rel="prev" class="no-underline">← {prev.data.title}</a> : <span />}
+		{next && <a href={`/docs/${next.id}/`} rel="next" class="no-underline">{next.data.title} →</a>}
 	</nav>
 </Base>
