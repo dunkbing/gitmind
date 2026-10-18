@@ -269,6 +269,26 @@ export function observations(body: string): Observation[] {
 	return out;
 }
 
+// currentObservations is observations without those under a "History"
+// heading, where replaced facts are kept for the record.
+export function currentObservations(body: string): Observation[] {
+	const out: Observation[] = [];
+	let history = false;
+	let historyLevel = 0;
+	for (const line of unfencedLines(body)) {
+		const h = /^(#{1,6})\s+(.+?)(?:\s+#+)?\s*$/.exec(line);
+		if (h) {
+			const level = h[1].length;
+			if (history && level > historyLevel) continue; // a subsection of History
+			history = h[2].trim().toLowerCase() === "history";
+			historyLevel = level;
+			continue;
+		}
+		if (!history) out.push(...observations(line));
+	}
+	return out;
+}
+
 export function inlineTags(body: string): string[] {
 	let tags: string[] = [];
 	for (const line of unfencedLines(body)) {

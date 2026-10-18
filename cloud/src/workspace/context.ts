@@ -1,6 +1,6 @@
 // build_context and session context, ported from internal/memory/context.go.
 
-import { summary } from "../engine/notes";
+import { currentObservations, summary } from "../engine/notes";
 import type { Hit, LinkHit, Store } from "./store";
 
 const day = (ms: number) => new Date(ms).toISOString().slice(0, 10);
@@ -43,6 +43,45 @@ function noteSummary(store: Store, path: string): string {
 
 const MAX_NOTE_CHARS = 1500;
 
+// Caps besides the size budget: profile facts, and index lines per section.
+const MAX_PROFILE_FACTS = 40;
+const MAX_PROJECT_LINES = 40;
+const MAX_GENERAL_LINES = 20;
+const MAX_OTHER_LINES = 5;
+
+export interface ProfileFact {
+	category: "instruction" | "preference";
+	text: string;
+	title: string;
+	path: string;
+}
+
+// profile gathers the user's standing instructions and preferences: the
+// [instruction] and [preference] facts of the notes in general/ and the
+// project's notes, newest notes first, instructions before preferences.
+// Facts under a "History" heading, notes in skip and repeats are left out.
+// A port of App.Profile (internal/memory/context.go).
+export function profile(store: Store, project: string, skip: Set<string> = new Set()): ProfileFact[] {
+	const dirs = project && project !== "general" ? ["general", project] : ["general"];
+	const hits = dirs.flatMap((d) => store.list(d)).sort((a, b) => b.updated - a.updated);
+	const seen = new Set<string>();
+	const facts: ProfileFact[] = [];
+	for (const h of hits) {
+		if (skip.has(h.path)) continue;
+		const r = store.read(h.path);
+		if (!r) continue;
+		for (const o of currentObservations(r.note.body)) {
+			if (o.category !== "instruction" && o.category !== "preference") continue;
+			const text = o.text.replace(/(\s+#[\p{L}\p{N}_/-]+)+\s*$/u, "").trim();
+			const key = text.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean).join(" ");
+			if (!text || seen.has(key)) continue;
+			seen.add(key);
+			facts.push({ category: o.category, text, title: r.note.title, path: h.path });
+		}
+	}
+	return facts.sort((a, b) => (a.category === b.category ? 0 : a.category === "instruction" ? -1 : 1));
+}
+
 // sessionContext renders pinned notes in full, then a one-line index of the
 // project's notes, general notes and recent activity, within roughly budget
 // characters.
@@ -59,6 +98,23 @@ export function sessionContext(store: Store, project: string, budget: number): s
 	if (project) b += `Current project: "${project}". Save project-specific notes in directory "${project}"; cross-project ones in "general".\n`;
 	if (projectNotes.length + general.length + recent.length === 0) return b + "\nMemory is empty so far.\n";
 
+	// The profile first, within a quarter of the budget; pinned notes are
+	// shown in full below, so their facts are skipped here.
+	const pinned = new Set([...projectNotes, ...general].filter((h) => h.pinned).map((h) => h.path));
+	const facts = profile(store, project, pinned);
+	if (facts.length) {
+		b += "\n## Profile: how the user works\n";
+		b += "Standing instructions and preferences from the notes, newest first. Follow them unless the user says otherwise.\n";
+		let left = 0;
+		facts.forEach((f, i) => {
+			const line = `- [${f.category}] ${f.text} (${f.title})\n`;
+			if (left > 0 || i >= MAX_PROFILE_FACTS || b.length + line.length > budget / 4) left++;
+			else b += line;
+		});
+		if (left > 0) b += `- … and ${left} more (search_notes category "instruction" or "preference")\n`;
+	}
+
+	// Pinned notes fill up to three quarters of the budget.
 	const shown = new Set<string>();
 	let pinnedHeading = false;
 	for (const h of [...projectNotes, ...general]) {
@@ -68,7 +124,7 @@ export function sessionContext(store: Store, project: string, budget: number): s
 		let body = r.note.body.trim();
 		if ([...body].length > MAX_NOTE_CHARS) body = [...body].slice(0, MAX_NOTE_CHARS).join("") + `\n… (truncated; read_note ${h.path} for the rest)`;
 		const entry = `\n### ${r.note.title} (${h.path})\n${body}\n`;
-		if (b.length + entry.length > (budget * 6) / 10) continue;
+		if (b.length + entry.length > (budget * 3) / 4) continue;
 		if (!pinnedHeading) {
 			b += "\n## Pinned notes\n";
 			pinnedHeading = true;
@@ -77,8 +133,9 @@ export function sessionContext(store: Store, project: string, budget: number): s
 		shown.add(h.path);
 	}
 
-	const index = (heading: string, hits: Hit[], more: string) => {
+	const index = (heading: string, hits: Hit[], maxLines: number, more: string) => {
 		let left = 0;
+		let lines = 0;
 		let wrote = false;
 		for (const h of hits) {
 			if (shown.has(h.path)) continue;
@@ -87,11 +144,12 @@ export function sessionContext(store: Store, project: string, budget: number): s
 				wrote = true;
 			}
 			const line = `- ${h.title} (${h.path}, ${day(h.updated)})${h.pinned ? " [pinned]" : ""}${h.summary ? ": " + h.summary : ""}\n`;
-			if (left > 0 || b.length + line.length > budget) {
+			if (left > 0 || lines >= maxLines || b.length + line.length > budget) {
 				left++;
 				continue;
 			}
 			b += line;
+			lines++;
 			shown.add(h.path);
 		}
 		if (left > 0) b += `- … and ${left} more (${more})\n`;
@@ -99,11 +157,11 @@ export function sessionContext(store: Store, project: string, budget: number): s
 	if (project) {
 		const heading = `\n## Project notes (${project})\n`;
 		if (!projectNotes.length) b += heading + "None yet.\n";
-		index(heading, projectNotes, `list_notes directory "${project}"`);
+		index(heading, projectNotes, MAX_PROJECT_LINES, `list_notes directory "${project}"`);
 	}
-	index("\n## General notes\n", general, `list_notes directory "general"`);
+	index("\n## General notes\n", general, MAX_GENERAL_LINES, `list_notes directory "general"`);
 	const others = recent.filter((h) => !shown.has(h.path) && !h.path.startsWith(project + "/")).slice(0, 5);
-	index("\n## Recently updated elsewhere\n", others, "recent_activity");
+	index("\n## Recently updated elsewhere\n", others, MAX_OTHER_LINES, "recent_activity");
 	return b;
 }
 

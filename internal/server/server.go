@@ -97,6 +97,7 @@ type contextArgs struct {
 
 type projectArgs struct {
 	Project string `json:"project,omitempty" jsonschema:"project name: the git repository's directory name; omit for general notes only"`
+	Budget  int    `json:"budget,omitempty" jsonschema:"rough size limit in characters (default 12000, at most 30000)"`
 }
 
 type recentArgs struct {
@@ -180,14 +181,19 @@ func New(app *memory.App, version string, opts ...Option) *mcp.Server {
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "project_context",
-		Description: "Load what memory knows about a project: its notes, general cross-project notes and recent activity. " +
+		Description: "Load what memory knows about a project: the user's profile (standing instructions and preferences), " +
+			"pinned notes, and an index of the project's notes, general notes and recent activity. " +
 			"Call it at the start of a session, unless that context was already provided.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in projectArgs) (*mcp.CallToolResult, any, error) {
 		dir, err := notes.CleanDir(in.Project)
 		if err != nil {
 			return nil, nil, err
 		}
-		out, err := app.SessionContext(dir, 12000)
+		budget := in.Budget
+		if budget <= 0 {
+			budget = 12000
+		}
+		out, err := app.SessionContext(dir, min(budget, 30000))
 		if err != nil {
 			return nil, nil, err
 		}

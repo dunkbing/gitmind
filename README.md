@@ -94,9 +94,12 @@ Two hooks make memory automatic. Add to `~/.claude/settings.json`:
 }
 ```
 
-- **`gitmind context`** (recall) loads pinned notes in full, plus a one-line
-  index of the current project's notes, your `general/` notes and recent
-  activity elsewhere. The project is the git repository's name (the main
+- **`gitmind context`** (recall) starts with your **profile**: the
+  `[instruction]` and `[preference]` lines of your `general/` notes and the
+  current project's notes (not ones under a `## History` heading), newest
+  first, at most 40 and a quarter of the budget. Then pinned notes in full,
+  then a one-line index of the current project's notes (up to 40), your
+  `general/` notes (up to 20) and recent activity elsewhere (5). The project is the git repository's name (the main
   checkout's name inside a worktree). Output stays under Claude Code's
   10,000-character hook limit; whatever doesn't fit is counted, with a pointer
   to `list_notes`.
@@ -115,7 +118,7 @@ as AGENT_MEMORY.md tells them to.
 | `search_notes` | Full-text search (SQLite FTS5, BM25; title > tags > body; notes with every word first, recent notes slightly favoured), filterable by directory, tags (frontmatter or inline `#tags`), observation category (`[decision]`, shown line by line) and update date (`since: 7d`) |
 | `read_note` | Read a note by path, permalink or title, with its backlinks |
 | `build_context` | A note plus the notes it links to and from, and links to notes not written yet (`depth: 2` goes one step further) |
-| `project_context` | A project's notes, general notes and recent activity, for the start of a session |
+| `project_context` | Your profile, pinned notes, and an index of a project's notes, general notes and recent activity, for the start of a session (`budget` sets the size) |
 | `write_note` | Create a note (the reply lists possibly overlapping notes, to merge instead of duplicating); replacing an existing one needs `overwrite: true` |
 | `pin_note` | Show a note in full at every session start (or unpin it) |
 | `edit_note` | `append`, `prepend`, `find_replace`, or `replace_section` (everything under a heading, added if missing) |

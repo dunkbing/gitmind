@@ -185,6 +185,12 @@ appApi.put("/w/:slug/review", async (c) => {
 	return c.json(await workspaceStub(c.env, ws).setReviewSettings(b));
 });
 
+appApi.get("/w/:slug/profile", async (c) => {
+	const ws = await workspace(c);
+	if (!ws) return noWorkspace(c);
+	return c.json(await workspaceStub(c.env, ws).profile(c.req.query("project") ?? ""));
+});
+
 appApi.get("/w/:slug/graph", async (c) => {
 	const ws = await workspace(c);
 	if (!ws) return noWorkspace(c);

@@ -504,6 +504,30 @@ func Observations(body string) []Observation {
 	return obs
 }
 
+// CurrentObservations is Observations without those under a "History"
+// heading, where facts that were replaced are kept for the record.
+func CurrentObservations(body string) []Observation {
+	var obs []Observation
+	history := false
+	historyLevel := 0
+	for _, line := range unfencedLines(body) {
+		if m := headingRe.FindStringSubmatch(line); m != nil {
+			level := len(m[1])
+			if history && level > historyLevel {
+				continue // a subsection of History
+			}
+			history = strings.EqualFold(strings.TrimSpace(m[2]), "history")
+			historyLevel = level
+			continue
+		}
+		if history {
+			continue
+		}
+		obs = append(obs, Observations(line)...)
+	}
+	return obs
+}
+
 // InlineTags returns the #tags written in body, normalized like frontmatter
 // tags. Markdown headings ("# Title") and URL fragments don't count.
 func InlineTags(body string) []string {

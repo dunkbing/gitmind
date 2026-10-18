@@ -125,13 +125,17 @@ function createServer(version: string): McpServer {
 		"project_context",
 		{
 			description:
-				"Load what memory knows about a project: pinned notes in full, plus an index of the project's notes, general notes and recent activity. " +
-				"Call it at the start of a session.",
-			inputSchema: { project: z.string().optional().describe("project name, e.g. the git repository's directory name; omit for general notes only"), workspace: workspaceArg },
+				"Load what memory knows about a project: the user's profile (standing instructions and preferences), pinned notes in full, " +
+				"and an index of the project's notes, general notes and recent activity. Call it at the start of a session.",
+			inputSchema: {
+				project: z.string().optional().describe("project name, e.g. the git repository's directory name; omit for general notes only"),
+				budget: z.number().int().optional().describe("rough size limit in characters (default 12000, at most 30000)"),
+				workspace: workspaceArg,
+			},
 		},
 		async (a) => {
 			const { stub } = await ctx(env(), a.workspace);
-			return text(await stub.projectContext(a.project ?? "", 12000));
+			return text(await stub.projectContext(a.project ?? "", Math.min(a.budget && a.budget > 0 ? a.budget : 12000, 30000)));
 		},
 	);
 

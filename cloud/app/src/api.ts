@@ -84,6 +84,13 @@ export interface ReviewSettings {
 	trusted: string[];
 }
 
+export interface ProfileFact {
+	category: "instruction" | "preference";
+	text: string;
+	title: string;
+	path: string;
+}
+
 export class ApiError extends Error {
 	constructor(
 		message: string,
@@ -133,6 +140,7 @@ export const api = {
 	accept: (slug: string, ids: number[] | "all") => call<{ ok: true }>("POST", `${w(slug)}/inbox/accept`, ids === "all" ? { all: true } : { ids }),
 	reject: (slug: string, id: number, reason?: string) => call<{ path: string }>("POST", `${w(slug)}/inbox/${id}/reject`, { reason }),
 	setReview: (slug: string, settings: ReviewSettings) => call<ReviewSettings>("PUT", `${w(slug)}/review`, settings),
+	profile: (slug: string) => call<ProfileFact[]>("GET", `${w(slug)}/profile`),
 	graph: (slug: string) => call<Graph>("GET", `${w(slug)}/graph`),
 	history: (slug: string) => call<Commit[]>("GET", `${w(slug)}/history`),
 	importFile: (slug: string, file: File) => {

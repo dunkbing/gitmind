@@ -2,6 +2,7 @@ package memory
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log"
 	"os/exec"
@@ -186,5 +187,58 @@ func TestCommitsNameTheAgent(t *testing.T) {
 	}
 	if got := strings.TrimSpace(string(out)); got != "memory: add ops/deploy.md (laptop, claude-code)" {
 		t.Errorf("commit message = %q", got)
+	}
+}
+
+func TestSessionProfile(t *testing.T) {
+	ctx := context.Background()
+	a := machine(t, "", "laptop")
+	write := func(title, dir, body string) {
+		t.Helper()
+		if _, _, err := a.Write(ctx, title, dir, body, nil, false); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("Working style", "general", "- [instruction] One-line commit messages #git\n- [preference] Use bun, not npm #tooling\n- [decision] Not a profile fact\n\n## History\n\n- [instruction] Write long commit bodies (until 2026-10-01)\n")
+	write("Shop conventions", "shop", "- [instruction] Prices are stored in cents\n- [preference] use bun, not npm.\n")
+	write("Other project", "blog", "- [instruction] Only for the blog\n")
+	write("Pinned rules", "general", "- [instruction] Shown in full instead\n")
+	if _, err := a.Pin(ctx, "Pinned rules", true); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := a.SessionContext("shop", 8000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile := out[strings.Index(out, "## Profile"):strings.Index(out, "## Pinned notes")]
+	for _, want := range []string{"- [instruction] One-line commit messages (Working style)", "- [instruction] Prices are stored in cents (Shop conventions)", "- [preference] use bun, not npm. (Shop conventions)"} {
+		if !strings.Contains(profile, want) {
+			t.Errorf("profile lacks %q:\n%s", want, profile)
+		}
+	}
+	for _, unwanted := range []string{"long commit bodies", "Only for the blog", "Not a profile fact", "Shown in full", "Use bun, not npm (Working style)"} {
+		if strings.Contains(profile, unwanted) {
+			t.Errorf("profile has %q:\n%s", unwanted, profile)
+		}
+	}
+	if strings.Index(profile, "[preference]") < strings.Index(profile, "Prices are stored") {
+		t.Errorf("instructions should come before preferences:\n%s", profile)
+	}
+
+	// The same fact in two notes appears once, in the newest wording.
+	// Caps: no more than 40 facts, then a pointer to the rest.
+	var many strings.Builder
+	for i := 0; i < 60; i++ {
+		fmt.Fprintf(&many, "- [instruction] Rule number %d\n", i)
+	}
+	write("Many rules", "general", many.String())
+	out, _ = a.SessionContext("shop", 30000)
+	profile = out[strings.Index(out, "## Profile"):strings.Index(out, "## Pinned notes")]
+	if n := strings.Count(profile, "- [instruction] Rule number"); n > 40 {
+		t.Errorf("%d facts shown, want at most 40", n)
+	}
+	if !strings.Contains(out, "more (search_notes category") {
+		t.Errorf("no pointer to the rest of the profile:\n%s", out)
 	}
 }

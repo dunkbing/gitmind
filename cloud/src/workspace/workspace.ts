@@ -20,7 +20,7 @@ import {
 import { checkSecrets } from "../engine/secrets";
 import { ConflictError, type FileChange, Session } from "../repo/git";
 import { remoteFor, repoProvider } from "../repo/provider";
-import { buildContext, sessionContext } from "./context";
+import { type ProfileFact, buildContext, profile, sessionContext } from "./context";
 import { type Embedder, embedderFor } from "./embed";
 import { type Hit, type InboxItem, type Query, Store } from "./store";
 
@@ -212,6 +212,13 @@ export class Workspace extends DurableObject<Env> {
 	async projectContext(project: string, budget: number): Promise<string> {
 		await this.fresh();
 		return sessionContext(this.store, cleanDir(project), budget);
+	}
+
+	// profile lists the user's standing instructions and preferences, for
+	// the web app (agents get them through projectContext).
+	async profile(project: string): Promise<ProfileFact[]> {
+		await this.fresh();
+		return profile(this.store, project ? cleanDir(project) : "");
 	}
 
 	async stats(): Promise<{ notes: number; head: string | null; passages: number; embedded: number; model: string | null }> {
