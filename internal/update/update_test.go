@@ -2,6 +2,7 @@ package update
 
 import (
 	"archive/tar"
+	"archive/zip"
 	"bytes"
 	"compress/gzip"
 	"context"
@@ -127,5 +128,37 @@ func TestNewer(t *testing.T) {
 		if got := Newer(c.a, c.b); got != c.want {
 			t.Errorf("Newer(%q, %q) = %v", c.a, c.b, got)
 		}
+	}
+}
+
+func TestWindowsZip(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	w, _ := zw.Create("gitmind.exe")
+	w.Write([]byte("MZ new exe"))
+	zw.Close()
+	archive := buf.Bytes()
+
+	u := fakeReleases(t, "v0.2.0", archive, sha(archive)+"  gitmind_windows_amd64.zip\n")
+	u.OS, u.Arch = "windows", "amd64"
+	ctx := context.Background()
+	r, _, err := u.Latest(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The fake server names its archive asset for linux/arm64; point it at
+	// the Windows name.
+	r.Assets[0].Name = "gitmind_windows_amd64.zip"
+	exe := filepath.Join(t.TempDir(), "gitmind.exe")
+	os.WriteFile(exe, []byte("MZ old exe"), 0o755)
+	if err := u.Apply(ctx, r, exe); err != nil {
+		t.Fatal(err)
+	}
+	if data, _ := os.ReadFile(exe); string(data) != "MZ new exe" {
+		t.Errorf("binary = %q", data)
+	}
+	CleanUp(exe)
+	if _, err := os.Stat(exe + ".old"); err == nil {
+		t.Error("CleanUp left the old binary")
 	}
 }

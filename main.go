@@ -83,6 +83,9 @@ func main() {
 	log.SetFlags(0)
 	log.SetPrefix("gitmind: ")
 	flag.Usage = func() { fmt.Fprint(os.Stderr, usage) }
+	if exe, err := currentExe(); err == nil {
+		update.CleanUp(exe)
+	}
 	dir := flag.String("dir", defaultDir(), "notes repository directory")
 	interval := flag.Duration("sync-interval", 3*time.Minute, "how often serve syncs in the background (0: only at startup)")
 	flag.Parse()
@@ -328,12 +331,9 @@ func updateCmd(ctx context.Context, checkOnly bool) error {
 		fmt.Printf("gitmind %s is available (you have %s). Run `gitmind update` to install it.\n", r.Tag, version)
 		return nil
 	}
-	exe, err := os.Executable()
+	exe, err := currentExe()
 	if err != nil {
 		return err
-	}
-	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
-		exe = resolved
 	}
 	fmt.Printf("Updating gitmind %s → %s…\n", version, r.Tag)
 	if err := u.Apply(ctx, r, exe); err != nil {
@@ -341,6 +341,17 @@ func updateCmd(ctx context.Context, checkOnly bool) error {
 	}
 	fmt.Printf("✓ Updated %s to %s. Restart Claude Code or Codex to use it there.\n", exe, r.Tag)
 	return nil
+}
+
+func currentExe() (string, error) {
+	exe, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
+		exe = resolved
+	}
+	return exe, nil
 }
 
 func initRepo(ctx context.Context, dir string, args []string) error {

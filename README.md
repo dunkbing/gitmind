@@ -33,6 +33,8 @@ curl -fsSL https://gitmind.app/install.sh | sh    # or: go install github.com/du
 gitmind setup
 ```
 
+On Windows, in PowerShell: `irm https://gitmind.app/install.ps1 | iex`.
+
 `gitmind update` installs the latest release later (`--check` only reports).
 
 `setup` asks where to keep your notes: [gitmind.app](https://gitmind.app),

@@ -18,7 +18,13 @@ gitmind setup
 ```
 
 The script installs the latest release for macOS or Linux into `~/.local/bin`,
-after checking its checksum. With Go installed you can use
+after checking its checksum. On Windows, run this in PowerShell instead; it
+installs into `%LOCALAPPDATA%\gitmind\bin` and adds that to your PATH:
+
+```powershell
+irm https://gitmind.app/install.ps1 | iex
+```
+ With Go installed you can use
 `go install github.com/dunkbing/gitmind@latest` instead.
 
 Run `gitmind update` now and then to get the latest release (`--check` only

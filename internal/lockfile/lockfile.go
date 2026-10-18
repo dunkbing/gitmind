@@ -5,12 +5,11 @@ package lockfile
 import (
 	"os"
 	"path/filepath"
-	"syscall"
 )
 
 // Lock blocks until it holds the lock on path, creating the file if needed.
-// flock locks belong to the open file, so separate Lock calls exclude each
-// other even within one process.
+// Locks belong to the open file, so separate Lock calls exclude each other
+// even within one process.
 func Lock(path string) (unlock func(), err error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, err
@@ -19,12 +18,12 @@ func Lock(path string) (unlock func(), err error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+	if err := lockFile(f); err != nil {
 		f.Close()
 		return nil, err
 	}
 	return func() {
-		syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+		unlockFile(f)
 		f.Close()
 	}, nil
 }

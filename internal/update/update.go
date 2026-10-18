@@ -6,7 +6,9 @@ package update
 
 import (
 	"archive/tar"
+	"archive/zip"
 	"bufio"
+	"bytes"
 	"compress/gzip"
 	"context"
 	"crypto/sha256"
@@ -17,6 +19,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -53,9 +56,20 @@ type Release struct {
 }
 
 // AssetName is the release archive for an OS and architecture, as the
-// release workflow names it.
+// release workflow names it: a zip on Windows, a tarball elsewhere.
 func AssetName(goos, goarch string) string {
+	if goos == "windows" {
+		return fmt.Sprintf("gitmind_%s_%s.zip", goos, goarch)
+	}
 	return fmt.Sprintf("gitmind_%s_%s.tar.gz", goos, goarch)
+}
+
+// BinaryName is the executable inside the archive.
+func BinaryName(goos string) string {
+	if goos == "windows" {
+		return "gitmind.exe"
+	}
+	return "gitmind"
 }
 
 // Latest returns the newest release, and whether it's newer than Current.
@@ -118,11 +132,17 @@ func (u *Updater) Apply(ctx context.Context, r Release, exe string) error {
 	if hex.EncodeToString(sum[:]) != want {
 		return fmt.Errorf("the download of %s doesn't match its checksum; not installing it", name)
 	}
-	binary, err := extract(archive, "gitmind")
+	binary, err := extract(archive, name, BinaryName(u.OS))
 	if err != nil {
 		return err
 	}
 	return replace(exe, binary)
+}
+
+// CleanUp removes what a Windows update leaves behind: the previous binary,
+// which couldn't be deleted while it was running.
+func CleanUp(exe string) {
+	os.Remove(exe + ".old")
 }
 
 func (u *Updater) get(ctx context.Context, url string) ([]byte, error) {
@@ -152,8 +172,26 @@ func checksumFor(sums []byte, name string) (string, error) {
 	return "", fmt.Errorf("checksums.txt has no entry for %s", name)
 }
 
-func extract(archive []byte, binary string) ([]byte, error) {
-	gz, err := gzip.NewReader(strings.NewReader(string(archive)))
+func extract(archive []byte, name, binary string) ([]byte, error) {
+	if strings.HasSuffix(name, ".zip") {
+		zr, err := zip.NewReader(bytes.NewReader(archive), int64(len(archive)))
+		if err != nil {
+			return nil, err
+		}
+		for _, f := range zr.File {
+			if path.Base(f.Name) != binary || f.FileInfo().IsDir() {
+				continue
+			}
+			rc, err := f.Open()
+			if err != nil {
+				return nil, err
+			}
+			defer rc.Close()
+			return io.ReadAll(io.LimitReader(rc, 200<<20))
+		}
+		return nil, fmt.Errorf("the archive has no %s binary", binary)
+	}
+	gz, err := gzip.NewReader(bytes.NewReader(archive))
 	if err != nil {
 		return nil, err
 	}
@@ -173,8 +211,10 @@ func extract(archive []byte, binary string) ([]byte, error) {
 }
 
 // replace swaps the file at exe for binary atomically: written next to it,
-// then renamed over it. Renaming works even while exe is running, since
-// the running process keeps the old file.
+// then renamed over it. On Unix renaming works even while exe is running,
+// since the running process keeps the old file. Windows won't replace a
+// running executable, but lets it be renamed, so it's moved aside to
+// exe.old first (and removed by CleanUp on a later run).
 func replace(exe string, binary []byte) error {
 	dir := filepath.Dir(exe)
 	tmp, err := os.CreateTemp(dir, ".gitmind-update-*")
@@ -194,6 +234,18 @@ func replace(exe string, binary []byte) error {
 	}
 	if err := os.Chmod(tmp.Name(), 0o755); err != nil {
 		return err
+	}
+	if runtime.GOOS == "windows" {
+		old := exe + ".old"
+		os.Remove(old)
+		if err := os.Rename(exe, old); err != nil {
+			return err
+		}
+		if err := os.Rename(tmp.Name(), exe); err != nil {
+			os.Rename(old, exe) // put the working binary back
+			return err
+		}
+		return nil
 	}
 	return os.Rename(tmp.Name(), exe)
 }
