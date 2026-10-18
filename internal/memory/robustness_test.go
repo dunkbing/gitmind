@@ -64,8 +64,6 @@ func TestWriteRefusesOverwrite(t *testing.T) {
 
 func TestConcurrentEditsKeepEveryChange(t *testing.T) {
 	noBackgroundPush(t)
-	trace := filepath.Join(t.TempDir(), "trace")
-	t.Setenv("GIT_TRACE", trace)
 	ctx := context.Background()
 	a := machine(t, "", "laptop")
 	if _, _, err := a.Write(ctx, "Log", "", "- start", nil, false); err != nil {
@@ -108,7 +106,7 @@ func TestConcurrentEditsKeepEveryChange(t *testing.T) {
 		}
 	}
 	if status := git(t, a.Store.Root, "status", "--porcelain"); status != "" {
-		t.Fatalf("uncommitted changes:\n%s\n%s\n%s\n%s", status, git(t, a.Store.Root, "diff", "HEAD"), git(t, a.Store.Root, "log", "--oneline", "-5"), func() string { b, _ := os.ReadFile(trace); return string(b[:min(len(b), 6000)]) }())
+		t.Fatalf("uncommitted changes:\n%s", status)
 	}
 }
 

@@ -176,3 +176,19 @@ func TestReplaceSection(t *testing.T) {
 		t.Error("ambiguous heading accepted")
 	}
 }
+
+func TestExistsMatchesCaseExactly(t *testing.T) {
+	s := Store{Root: t.TempDir()}
+	if _, err := s.Write(Note{Path: "work/log.md", Title: "Log"}); err != nil {
+		t.Fatal(err)
+	}
+	if !s.Exists("work/log.md") {
+		t.Error("work/log.md not found")
+	}
+	// On macOS and Windows the filesystem would find these; git wouldn't.
+	for _, rel := range []string{"work/Log.md", "Work/log.md"} {
+		if s.Exists(rel) {
+			t.Errorf("%s found, but the file is work/log.md", rel)
+		}
+	}
+}

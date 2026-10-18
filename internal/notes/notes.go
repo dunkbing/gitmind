@@ -14,6 +14,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -231,13 +232,27 @@ func (s Store) abs(rel string) (string, error) {
 	return filepath.Join(s.Root, filepath.FromSlash(clean)), nil
 }
 
+// Exists reports whether a note file exists at rel, spelled exactly so:
+// on case-insensitive filesystems (macOS, Windows) "Log.md" would otherwise
+// find log.md, and git, which is case-sensitive, wouldn't know that path.
 func (s Store) Exists(rel string) bool {
 	p, err := s.abs(rel)
 	if err != nil {
 		return false
 	}
 	info, err := os.Stat(p)
-	return err == nil && info.Mode().IsRegular()
+	if err != nil || !info.Mode().IsRegular() {
+		return false
+	}
+	dir := s.Root
+	for _, part := range strings.Split(path.Clean(filepath.ToSlash(rel)), "/") {
+		entries, err := os.ReadDir(dir)
+		if err != nil || !slices.ContainsFunc(entries, func(e os.DirEntry) bool { return e.Name() == part }) {
+			return false
+		}
+		dir = filepath.Join(dir, part)
+	}
+	return true
 }
 
 func (s Store) Read(rel string) (Note, time.Time, error) {
