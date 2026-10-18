@@ -232,10 +232,10 @@ func TestSwitchingKeepsNotes(t *testing.T) {
 		t.Error("the backup lost the old notes")
 	}
 	files := map[string]string{
-		"myapp/deploy.md":           "only here\n",   // only in the old folder: copied
-		"general/same.md":           "same\n",        // identical: left alone
-		"general/prefs.md":          "new version\n", // differs: new location wins...
-		"general/prefs-previous.md": "old version\n", // ...and the old version is kept beside it
+		"myapp/deploy.md":           "only here\n",                                                    // only in the old folder: copied
+		"general/same.md":           "---\ntitle: Same\ncreated: 2026-10-18T05:00:00Z\n---\n\nsame\n", // same note (only created differs): left alone
+		"general/prefs.md":          "new version\n",                                                  // differs: new location wins...
+		"general/prefs-previous.md": "old version\n",                                                  // ...and the old version is kept beside it
 	}
 	for path, want := range files {
 		if data, err := os.ReadFile(filepath.Join(dir, path)); err != nil || string(data) != want {
@@ -244,6 +244,9 @@ func TestSwitchingKeepsNotes(t *testing.T) {
 	}
 	// And it was all pushed to the new location.
 	pushed := run(t, root, "git", "--git-dir", remote, "ls-tree", "-r", "--name-only", "main")
+	if _, err := os.Stat(filepath.Join(dir, "general", "same-previous.md")); err == nil {
+		t.Error("a note differing only in its created time was kept as a duplicate")
+	}
 	for _, path := range []string{"myapp/deploy.md", "general/prefs-previous.md"} {
 		if !strings.Contains(pushed, path) {
 			t.Errorf("%s wasn't pushed:\n%s", path, pushed)
