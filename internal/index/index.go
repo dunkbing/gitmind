@@ -15,7 +15,7 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/dunkbing/memory-go/internal/notes"
+	"github.com/dunkbing/gitmind/internal/notes"
 	_ "modernc.org/sqlite"
 )
 

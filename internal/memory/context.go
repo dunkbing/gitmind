@@ -8,8 +8,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/dunkbing/memory-go/internal/index"
-	"github.com/dunkbing/memory-go/internal/notes"
+	"github.com/dunkbing/gitmind/internal/index"
+	"github.com/dunkbing/gitmind/internal/notes"
 )
 
 // BuildContext renders a note with its neighbourhood in the link graph:
@@ -153,7 +153,7 @@ func (a *App) SessionContext(project string, budget int) (string, error) {
 	}
 
 	var b strings.Builder
-	b.WriteString("# Memory (memory-go)\n\n")
+	b.WriteString("# Memory (gitmind)\n\n")
 	b.WriteString("Persistent notes shared across the user's machines. Below: pinned notes in full, then an index of " +
 		"other notes; open them with read_note or build_context when relevant, and use search_notes for anything else.\n")
 	if project != "" {

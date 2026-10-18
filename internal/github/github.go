@@ -1,5 +1,5 @@
 // Package github logs in to GitHub with the OAuth device flow, stores the
-// token, and talks to the few REST endpoints memory-go needs.
+// token, and talks to the few REST endpoints gitmind needs.
 package github
 
 import (
@@ -51,7 +51,7 @@ type DeviceCode struct {
 func (c *Client) StartLogin(ctx context.Context) (DeviceCode, error) {
 	var dc DeviceCode
 	if c.ClientID == "" {
-		return dc, errors.New("no GitHub OAuth client ID configured; set MEMORY_GO_GITHUB_CLIENT_ID")
+		return dc, errors.New("no GitHub OAuth client ID configured; set GITMIND_GITHUB_CLIENT_ID")
 	}
 	err := c.postForm(ctx, c.WebURL+"/login/device/code", url.Values{
 		"client_id": {c.ClientID},
@@ -97,14 +97,14 @@ func (c *Client) WaitForLogin(ctx context.Context, dc DeviceCode) (string, error
 		case "slow_down":
 			interval = time.Duration(max(resp.Interval, int(interval/c.PollUnit)+5)) * c.PollUnit
 		case "expired_token":
-			return "", errors.New("the code expired before it was approved; run `memory-go auth login` again")
+			return "", errors.New("the code expired before it was approved; run `gitmind auth login` again")
 		case "access_denied":
 			return "", errors.New("the login was denied on GitHub")
 		default:
 			return "", fmt.Errorf("GitHub login failed: %s", resp.Error)
 		}
 		if dc.ExpiresIn > 0 && time.Now().After(deadline) {
-			return "", errors.New("the code expired before it was approved; run `memory-go auth login` again")
+			return "", errors.New("the code expired before it was approved; run `gitmind auth login` again")
 		}
 	}
 }
@@ -140,7 +140,7 @@ func (c *Client) CreateRepo(ctx context.Context, name string, private bool) (Rep
 	return r, c.api(ctx, http.MethodPost, "/user/repos", map[string]any{
 		"name":        name,
 		"private":     private,
-		"description": "Agent memory notes, synced by memory-go",
+		"description": "Agent memory notes, synced by gitmind",
 	}, &r)
 }
 
@@ -175,7 +175,7 @@ func (c *Client) api(ctx context.Context, method, path string, body, out any) er
 	case resp.StatusCode == http.StatusNotFound:
 		return ErrNotFound
 	case resp.StatusCode == http.StatusUnauthorized:
-		return errors.New("GitHub rejected the saved login; run `memory-go auth login` again")
+		return errors.New("GitHub rejected the saved login; run `gitmind auth login` again")
 	case resp.StatusCode >= 300:
 		var e struct {
 			Message string `json:"message"`
@@ -214,14 +214,14 @@ type Credentials struct {
 // CredentialsPath is where the login is saved: a file only the user can
 // read, in the user's config directory.
 func CredentialsPath() (string, error) {
-	if p := os.Getenv("MEMORY_GO_CREDENTIALS"); p != "" {
+	if p := os.Getenv("GITMIND_CREDENTIALS"); p != "" {
 		return p, nil
 	}
 	dir, err := os.UserConfigDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, "memory-go", "github.json"), nil
+	return filepath.Join(dir, "gitmind", "github.json"), nil
 }
 
 func LoadCredentials() (Credentials, error) {
@@ -232,7 +232,7 @@ func LoadCredentials() (Credentials, error) {
 	}
 	data, err := os.ReadFile(p)
 	if errors.Is(err, os.ErrNotExist) {
-		return c, errors.New("not logged in to GitHub; run `memory-go auth login`")
+		return c, errors.New("not logged in to GitHub; run `gitmind auth login`")
 	} else if err != nil {
 		return c, err
 	}

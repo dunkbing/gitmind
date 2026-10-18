@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dunkbing/memory-go/internal/notes"
+	"github.com/dunkbing/gitmind/internal/notes"
 )
 
 func TestOldIndexIsRebuilt(t *testing.T) {

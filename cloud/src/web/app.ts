@@ -26,6 +26,7 @@ import {
 import { linkTarget, parse, permalink } from "../engine/notes";
 import { parseExport } from "../import";
 import { actorOf, parseWhen } from "../mcp";
+import { ICON_PNG_32, ICON_PNG_180, ICON_PNG_512, ICON_SVG } from "./icon";
 import { escape, page } from "./layout";
 import { renderMarkdown } from "./markdown";
 
@@ -83,7 +84,7 @@ const githubApi = (env: Env) => env.GITHUB_API_URL ?? "https://api.github.com";
 
 async function githubUser(env: Env, token: string) {
 	const res = await fetch(`${githubApi(env)}/user`, {
-		headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json", "User-Agent": "memory-go-cloud" },
+		headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json", "User-Agent": "gitmind-cloud" },
 	});
 	if (!res.ok) throw new Error(`Couldn't read your GitHub profile (${res.status}).`);
 	return (await res.json()) as { id: number; login: string; name?: string; avatar_url?: string };
@@ -129,9 +130,9 @@ web.get("/auth/github/callback", async (c) => {
 // Without a client secret (GITHUB_CLIENT_SECRET unset), sign-in uses GitHub's
 // device flow, which needs only the OAuth App's public client ID: the page
 // shows a code, the user approves it on github.com, and the page polls until
-// GitHub confirms. Self-hosters can then sign in with memory-go's public app
+// GitHub confirms. Self-hosters can then sign in with gitmind's public app
 // and skip creating their own.
-const DEVICE_LOGIN = "memory-go-login:";
+const DEVICE_LOGIN = "gitmind-login:";
 
 async function deviceLogin(c: C) {
 	const res = await fetch(`${githubWeb(c.env)}/login/device/code`, {
@@ -151,7 +152,7 @@ async function deviceLogin(c: C) {
 		<p>Enter this code on GitHub to confirm it's you:</p>
 		<p style="font:600 30px ui-monospace,monospace;letter-spacing:.08em;margin:8px 0">${escape(dc.user_code!)}</p>
 		<p><a class="btn" href="${escape(dc.verification_uri!)}" target="_blank" rel="noopener">Open GitHub</a></p>
-		<p class="muted" id="status">Waiting for you to approve memory-go on GitHub…</p></div>
+		<p class="muted" id="status">Waiting for you to approve gitmind on GitHub…</p></div>
 		<script>
 		(async () => {
 			const status = document.getElementById("status");
@@ -231,7 +232,7 @@ web.get("/authorize", async (c) => {
 			{ title: `Authorize ${details.clientName}`, user },
 			`<div class="hero card"><h1>Allow ${escape(details.clientName)} to use your memory?</h1>
 			<p>${origin} Access goes to <strong>${escape(details.redirectHost)}</strong>.</p>
-			${details.redirectIsLoopback ? "<p><strong>This sends access to an app on your computer.</strong> Continue only if you just started signing in from it, e.g. with <code>memory-go setup --cloud</code>.</p>" : ""}
+			${details.redirectIsLoopback ? "<p><strong>This sends access to an app on your computer.</strong> Continue only if you just started signing in from it, e.g. with <code>gitmind setup --cloud</code>.</p>" : ""}
 			<p>It will be able to read, search and change the notes in every workspace you belong to, as <strong>${escape(user.login)}</strong>.</p>
 			<form method="post"><input type="hidden" name="handle" value="${escape(consent.handle)}">
 			<div class="row"><button name="decision" value="approve">Allow</button><button class="plain" name="decision" value="deny">Deny</button></div></form></div>`,
@@ -290,10 +291,10 @@ web.get("/", async (c) => {
 	return page(
 		{ title: "Memory for your AI agents", user },
 		`<div class="hero"><h1>One memory for Claude, ChatGPT, Codex and your coding agents.</h1>
-		<p>memory-go keeps what your agents learn (decisions, preferences, gotchas, setup knowledge) as Markdown notes in a git repository you own,
+		<p>gitmind keeps what your agents learn (decisions, preferences, gotchas, setup knowledge) as Markdown notes in a git repository you own,
 		and serves them to every AI app over MCP: claude.ai, Claude Desktop and mobile, ChatGPT, Claude Code and Codex.</p>
 		<ul><li>Search, links between notes, pinned notes, and a full history of every change.</li>
-		<li>Your laptops sync the same notes with plain git through the <a href="https://github.com/dunkbing/memory-go">memory-go CLI</a>.</li>
+		<li>Your laptops sync the same notes with plain git through the <a href="https://github.com/dunkbing/gitmind">gitmind CLI</a>.</li>
 		<li>Team workspaces share a memory between people and their agents.</li>
 		<li>Open source (AGPL-3.0); self-host it on your own Cloudflare account.</li></ul>
 		<p><a class="btn" href="/login">Sign in with GitHub</a></p></div>`,
@@ -310,13 +311,13 @@ web.get("/connect", async (c) => {
 		`<h1>Connect your AI apps</h1>
 		<p>Every app connects to the same MCP endpoint and signs in as you:</p><pre class="box">${escape(mcp)}</pre>
 		<h3>claude.ai, Claude Desktop and Claude mobile</h3>
-		<p>Settings → Connectors → <em>Add custom connector</em>, name it <code>memory-go</code> and paste the URL above. It then works on every device you use Claude on.</p>
+		<p>Settings → Connectors → <em>Add custom connector</em>, name it <code>gitmind</code> and paste the URL above. It then works on every device you use Claude on.</p>
 		<h3>ChatGPT</h3><p>Settings → Apps &amp; Connectors → <em>Create</em> (developer mode), paste the URL above and choose OAuth.</p>
-		<h3>Claude Code</h3><pre class="box">claude mcp add --transport http --scope user memory-go ${escape(mcp)}</pre><p>Then run <code>/mcp</code> in Claude Code to sign in.</p>
-		<h3>Codex</h3><pre class="box">[mcp_servers.memory-go]\nurl = "${escape(mcp)}"</pre><p>in <code>~/.codex/config.toml</code>, then <code>codex mcp login memory-go</code>.</p>
+		<h3>Claude Code</h3><pre class="box">claude mcp add --transport http --scope user gitmind ${escape(mcp)}</pre><p>Then run <code>/mcp</code> in Claude Code to sign in.</p>
+		<h3>Codex</h3><pre class="box">[mcp_servers.gitmind]\nurl = "${escape(mcp)}"</pre><p>in <code>~/.codex/config.toml</code>, then <code>codex mcp login gitmind</code>.</p>
 		<h3>Local, offline-capable sync on your laptops</h3>
-		<p>The <a href="https://github.com/dunkbing/memory-go">memory-go CLI</a> keeps a git clone of a workspace on your machine and serves it to local agents, syncing with this server:</p>
-		<pre class="box">go install github.com/dunkbing/memory-go@latest\nmemory-go setup --cloud ${escape(c.env.PUBLIC_URL)}</pre>
+		<p>The <a href="https://github.com/dunkbing/gitmind">gitmind CLI</a> keeps a git clone of a workspace on your machine and serves it to local agents, syncing with this server:</p>
+		<pre class="box">go install github.com/dunkbing/gitmind@latest\ngitmind setup --cloud ${escape(c.env.PUBLIC_URL)}</pre>
 		<h3>Plain git</h3><p>Each workspace is a git repository. Its settings page shows how to clone it.</p>`,
 	);
 });
@@ -621,7 +622,7 @@ function importPage(ctx: { user: User; ws: Workspace; all: Workspace[] }, flash?
 		<p>Upload one of:</p><ul>
 		<li><strong>Claude</strong>: claude.ai → Settings → Privacy → <em>Export data</em>; upload the zip you receive.</li>
 		<li><strong>ChatGPT</strong>: Settings → Data controls → <em>Export data</em>; upload the zip.</li>
-		<li><strong>Markdown notes</strong>: a zip of a folder (Basic Memory, Obsidian, memory-go). Paths are kept.</li></ul>
+		<li><strong>Markdown notes</strong>: a zip of a folder (Basic Memory, Obsidian, gitmind). Paths are kept.</li></ul>
 		<p><input type="file" name="file" accept=".zip,.json" required></p><button>Import</button></form>
 		<p class="muted">Conversations become searchable notes under <code>imports/claude/</code> or <code>imports/chatgpt/</code>, one per conversation, in a single commit.
 		Existing notes are never overwritten. Ask an agent to read imported conversations and save the lasting facts as regular notes.</p></div>`,
@@ -678,7 +679,7 @@ async function settingsPage(c: C, ctx: { user: User; ws: Workspace; all: Workspa
 		${manage ? `<form method="post" action="/w/${ws.slug}/invites" class="row" style="margin-top:12px"><select name="role"><option value="member">member</option><option value="admin">admin</option></select><button>Create invite link</button></form><p class="muted">Links work once and expire after 7 days.</p>` : ""}` : `<h2>Teams</h2><p>Share a memory with other people and their agents in a team workspace.</p>`}
 		<h2>New team workspace</h2><form method="post" action="/teams" class="row"><input type="text" name="name" placeholder="Team name" required><button>Create team</button></form>
 		</div><div><h2>Your data</h2><p><a class="btn plain" href="/w/${ws.slug}/export.zip">Download all notes (zip)</a></p>
-		<p class="muted">Clone it with git: run <code>memory-go setup --cloud ${escape(c.env.PUBLIC_URL)} --workspace ${escape(ws.slug)}</code>, which keeps a synced clone in <code>~/.memory-go</code>.</p></div></div>`,
+		<p class="muted">Clone it with git: run <code>gitmind setup --cloud ${escape(c.env.PUBLIC_URL)} --workspace ${escape(ws.slug)}</code>, which keeps a synced clone in <code>~/.gitmind</code>.</p></div></div>`,
 	);
 }
 
@@ -736,5 +737,14 @@ web.post("/invite/:code", async (c) => {
 		return page({ title: "Invite", user, error: errMessage(e) }, "");
 	}
 });
+
+// ---- icons -----------------------------------------------------------------
+
+const icon = (body: string | Uint8Array, type: string) => () =>
+	new Response(body, { headers: { "Content-Type": type, "Cache-Control": "public, max-age=86400" } });
+web.get("/favicon.svg", icon(ICON_SVG, "image/svg+xml"));
+web.get("/favicon.ico", icon(ICON_PNG_32, "image/png"));
+web.get("/apple-touch-icon.png", icon(ICON_PNG_180, "image/png"));
+web.get("/icon-512.png", icon(ICON_PNG_512, "image/png"));
 
 web.notFound((c) => notFound(c, c.get("user") ?? null, "This page doesn't exist."));

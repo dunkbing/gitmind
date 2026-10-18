@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dunkbing/memory-go/internal/gitsync"
-	"github.com/dunkbing/memory-go/internal/index"
-	"github.com/dunkbing/memory-go/internal/notes"
+	"github.com/dunkbing/gitmind/internal/gitsync"
+	"github.com/dunkbing/gitmind/internal/index"
+	"github.com/dunkbing/gitmind/internal/notes"
 )
 
 // machine sets up one "machine": a notes repo cloned from remote.
@@ -151,7 +151,7 @@ func TestSyncBetweenMachines(t *testing.T) {
 		}
 	}
 
-	// Edits made outside memory-go (e.g. Obsidian) are committed by sync.
+	// Edits made outside gitmind (e.g. Obsidian) are committed by sync.
 	if _, err := laptop.Store.Write(laptop.mustRead(t, "general/preferences.md", "- [preference] dark mode")); err != nil {
 		t.Fatal(err)
 	}

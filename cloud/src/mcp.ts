@@ -39,7 +39,7 @@ export function mcpHandler(version: string, hostname: string) {
 }
 
 function createServer(version: string): McpServer {
-	const server = new McpServer({ name: "memory-go", version }, { instructions: INSTRUCTIONS });
+	const server = new McpServer({ name: "gitmind", version }, { instructions: INSTRUCTIONS });
 
 	const ctx = async (env: Env, slug?: string) => {
 		const props = getMcpAuthContext()?.props as AuthProps | undefined;

@@ -18,7 +18,7 @@ beforeAll(async () => {
 afterAll(() => server.close());
 
 const remote = (repo: string) => ({ url: server.url(repo), auth: async () => ({ username: "x", password: "token" }) });
-const author = { name: "memory-go cloud", email: "cloud@memory-go" };
+const author = { name: "gitmind cloud", email: "cloud@gitmind" };
 
 describe("Session", () => {
 	it("starts from an empty repo, commits, and reads back", async () => {

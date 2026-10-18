@@ -74,8 +74,9 @@ export function page(o: PageOptions, body: string): Response {
 			<form class="inline" method="post" action="/logout"><button class="plain" type="submit">Sign out</button></form></span>`
 		: `<a class="btn" href="/login">Sign in with GitHub</a>`;
 	const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${escape(o.title)} · memory-go</title><style>${STYLE}</style></head><body>
-<header><a class="brand" href="/">memory-go</a>${switcher}<nav>${nav}</nav>${me}</header>
+<title>${escape(o.title)} · gitmind</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="32x32"><link rel="apple-touch-icon" href="/apple-touch-icon.png"><style>${STYLE}</style></head><body>
+<header><a class="brand" href="/"><img src="/favicon.svg" alt="" style="width:22px;height:22px;border-radius:5px;vertical-align:-5px;margin-right:6px">gitmind</a>${switcher}<nav>${nav}</nav>${me}</header>
 <main>${o.flash ? `<div class="flash">${escape(o.flash)}</div>` : ""}${o.error ? `<div class="flash error">${escape(o.error)}</div>` : ""}${body}</main></body></html>`;
 	return new Response(html, {
 		headers: {

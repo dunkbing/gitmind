@@ -69,7 +69,7 @@ func TestNudge(t *testing.T) {
 		t.Error("no nudge after more work")
 	}
 	// ...unless the agent saved to memory along the way.
-	transcript(t, tr, append(repeat("Edit", 10), "mcp__memory-go__write_note", "Bash")...)
+	transcript(t, tr, append(repeat("Edit", 10), "mcp__gitmind__write_note", "Bash")...)
 	if got, _ := Nudge(StopInput{SessionID: "s3", TranscriptPath: tr}, state, 5); got != "" {
 		t.Error("nudged right after a memory write")
 	}

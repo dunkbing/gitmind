@@ -1,4 +1,4 @@
-// memory-go cloud: one Worker serving the remote MCP endpoint, the OAuth
+// gitmind cloud: one Worker serving the remote MCP endpoint, the OAuth
 // authorization server, the CLI's API and the web app.
 
 import { OAuthProvider } from "@cloudflare/workers-oauth-provider";

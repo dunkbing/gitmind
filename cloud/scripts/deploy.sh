@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Deploys memory-go cloud to your Cloudflare account. Safe to re-run.
+# Deploys gitmind cloud to your Cloudflare account. Safe to re-run.
 #
 #   ./scripts/deploy.sh
 #   GITHUB_CLIENT_ID=... GITHUB_CLIENT_SECRET=... ./scripts/deploy.sh   # your own OAuth App
@@ -16,15 +16,15 @@ $W whoami >/dev/null || { echo "Sign in first: bunx wrangler login (or set CLOUD
 
 if grep -q REPLACE_WITH_D1_ID wrangler.jsonc; then
 	echo "== creating the D1 database"
-	$W d1 create memory-go >/dev/null 2>&1 || true
-	id=$($W d1 list --json | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s.slice(s.indexOf("["))).find(d=>d.name==="memory-go").uuid))')
+	$W d1 create gitmind >/dev/null 2>&1 || true
+	id=$($W d1 list --json | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s.slice(s.indexOf("["))).find(d=>d.name==="gitmind").uuid))')
 	sed -i.bak "s/REPLACE_WITH_D1_ID/$id/" wrangler.jsonc && rm wrangler.jsonc.bak
 fi
 
 if grep -q REPLACE_WITH_KV_ID wrangler.jsonc; then
 	echo "== creating the KV namespace for OAuth"
-	$W kv namespace create memory-go-oauth >/dev/null 2>&1 || true
-	id=$($W kv namespace list | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s.slice(s.indexOf("["))).find(n=>n.title.endsWith("memory-go-oauth")).id))')
+	$W kv namespace create gitmind-oauth >/dev/null 2>&1 || true
+	id=$($W kv namespace list | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s.slice(s.indexOf("["))).find(n=>n.title.endsWith("gitmind-oauth")).id))')
 	sed -i.bak "s/REPLACE_WITH_KV_ID/$id/" wrangler.jsonc && rm wrangler.jsonc.bak
 fi
 

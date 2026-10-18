@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dunkbing/memory-go/internal/index"
+	"github.com/dunkbing/gitmind/internal/index"
 	"golang.org/x/text/unicode/norm"
 )
 
@@ -288,7 +288,7 @@ func TestRecencySurvivesPull(t *testing.T) {
 		t.Errorf("date filter after pull = %v", paths(old))
 	}
 
-	// Editing a pulled file outside memory-go (uncommitted) makes it recent.
+	// Editing a pulled file outside gitmind (uncommitted) makes it recent.
 	if _, err := desktop.Store.Write(desktop.mustRead(t, "old-decision.md", "- [decision] still SQLite")); err != nil {
 		t.Fatal(err)
 	}

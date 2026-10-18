@@ -100,7 +100,7 @@ func browser(t *testing.T) func(string) {
 }
 
 func TestLoginAPIAndCredentialHelper(t *testing.T) {
-	t.Setenv("MEMORY_GO_CLOUD_CREDENTIALS", filepath.Join(t.TempDir(), "cloud.json"))
+	t.Setenv("GITMIND_CLOUD_CREDENTIALS", filepath.Join(t.TempDir(), "cloud.json"))
 	ctx := context.Background()
 	srv := fakeServer(t)
 
@@ -144,7 +144,7 @@ func TestLoginAPIAndCredentialHelper(t *testing.T) {
 }
 
 func TestLoginByPastingTheRedirect(t *testing.T) {
-	t.Setenv("MEMORY_GO_CLOUD_CREDENTIALS", filepath.Join(t.TempDir(), "cloud.json"))
+	t.Setenv("GITMIND_CLOUD_CREDENTIALS", filepath.Join(t.TempDir(), "cloud.json"))
 	srv := fakeServer(t)
 	// Over SSH the redirect can't reach this machine: the user pastes the
 	// address their browser ended up on.

@@ -1,4 +1,4 @@
-// Command memory-go is a git-backed memory server for coding agents. It runs
+// Command gitmind is a git-backed memory server for coding agents. It runs
 // as a local MCP server over stdio and keeps notes in sync between machines
 // through a git remote such as a private GitHub repository.
 package main
@@ -19,30 +19,30 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/dunkbing/memory-go/internal/cloud"
-	"github.com/dunkbing/memory-go/internal/github"
-	"github.com/dunkbing/memory-go/internal/gitsync"
-	"github.com/dunkbing/memory-go/internal/hooks"
-	"github.com/dunkbing/memory-go/internal/index"
-	"github.com/dunkbing/memory-go/internal/memory"
-	"github.com/dunkbing/memory-go/internal/notes"
-	"github.com/dunkbing/memory-go/internal/server"
+	"github.com/dunkbing/gitmind/internal/cloud"
+	"github.com/dunkbing/gitmind/internal/github"
+	"github.com/dunkbing/gitmind/internal/gitsync"
+	"github.com/dunkbing/gitmind/internal/hooks"
+	"github.com/dunkbing/gitmind/internal/index"
+	"github.com/dunkbing/gitmind/internal/memory"
+	"github.com/dunkbing/gitmind/internal/notes"
+	"github.com/dunkbing/gitmind/internal/server"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 var version = "0.1.0-dev"
 
-const usage = `memory-go: git-backed memory for coding agents
+const usage = `gitmind: git-backed memory for coding agents
 
 Usage:
-  memory-go [--dir DIR] [--sync-interval 3m] [command] [args]
+  gitmind [--dir DIR] [--sync-interval 3m] [command] [args]
 
 Commands:
   setup              log in to GitHub if needed, then connect the notes
                      directory to your notes repo, creating it if missing
-                       --repo NAME     NAME or OWNER/NAME (default memory-notes)
+                       --repo NAME     NAME or OWNER/NAME (default gitmind-notes)
                        --public        create it public (default private)
-                       --cloud URL     use a memory-go cloud server instead of
+                       --cloud URL     use a gitmind cloud server instead of
                                        GitHub (signs in through your browser)
                        --workspace S   cloud workspace (default: personal)
   auth login|status|logout
@@ -64,12 +64,12 @@ Commands:
   recent [N]         list the N most recently changed notes (default 10)
   version            print the version
 
-The notes directory defaults to $MEMORY_GO_DIR, or ~/.memory-go.
+The notes directory defaults to $GITMIND_DIR, or ~/.gitmind.
 `
 
 func main() {
 	log.SetFlags(0)
-	log.SetPrefix("memory-go: ")
+	log.SetPrefix("gitmind: ")
 	flag.Usage = func() { fmt.Fprint(os.Stderr, usage) }
 	dir := flag.String("dir", defaultDir(), "notes repository directory")
 	interval := flag.Duration("sync-interval", 3*time.Minute, "how often serve syncs in the background (0: only at startup)")
@@ -142,7 +142,7 @@ func main() {
 
 func serve(ctx context.Context, dir string, interval time.Duration) error {
 	if !gitsync.IsRepo(dir) {
-		log.Printf("creating a local notes repository at %s; run `memory-go init REMOTE` to sync it", dir)
+		log.Printf("creating a local notes repository at %s; run `gitmind init REMOTE` to sync it", dir)
 		if err := gitsync.Init(ctx, dir, ""); err != nil {
 			return err
 		}
@@ -183,7 +183,7 @@ func sessionContext(dir string, args []string) {
 		name = clean
 	}
 	if !gitsync.IsRepo(dir) {
-		log.Printf("no notes repository at %s; run `memory-go init`", dir)
+		log.Printf("no notes repository at %s; run `gitmind init`", dir)
 		return
 	}
 	app, err := memory.Open(dir, log.Default())
@@ -227,7 +227,7 @@ func nudge(dir string, args []string) {
 	if err := json.Unmarshal(hookInput(), &input); err != nil {
 		return
 	}
-	reason, err := hooks.Nudge(input, filepath.Join(dir, ".memory-go", "nudges"), *threshold)
+	reason, err := hooks.Nudge(input, filepath.Join(dir, ".gitmind", "nudges"), *threshold)
 	if err != nil {
 		log.Print(err)
 		return
@@ -291,14 +291,14 @@ func initRepo(ctx context.Context, dir string, args []string) error {
 	}
 	fmt.Printf("Notes repository ready at %s\n", dir)
 	if remote == "" {
-		fmt.Println("No remote yet: add one with `memory-go init git@github.com:you/notes.git` to sync between machines.")
+		fmt.Println("No remote yet: add one with `gitmind init git@github.com:you/notes.git` to sync between machines.")
 	}
 	return nil
 }
 
 // reindex deletes the index so Open rebuilds it from scratch.
 func reindex(dir string) error {
-	file := filepath.Join(dir, ".memory-go", "index.db")
+	file := filepath.Join(dir, ".gitmind", "index.db")
 	for _, suffix := range []string{"", "-wal", "-shm"} {
 		if err := os.Remove(file + suffix); err != nil && !os.IsNotExist(err) {
 			return err
@@ -333,12 +333,12 @@ func printHits(hits []index.Hit) {
 }
 
 func defaultDir() string {
-	if d := os.Getenv("MEMORY_GO_DIR"); d != "" {
+	if d := os.Getenv("GITMIND_DIR"); d != "" {
 		return d
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return ".memory-go"
+		return ".gitmind"
 	}
-	return filepath.Join(home, ".memory-go")
+	return filepath.Join(home, ".gitmind")
 }

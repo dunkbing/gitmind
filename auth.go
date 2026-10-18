@@ -11,19 +11,19 @@ import (
 	"os"
 	"strings"
 
-	"github.com/dunkbing/memory-go/internal/cloud"
-	"github.com/dunkbing/memory-go/internal/github"
-	"github.com/dunkbing/memory-go/internal/gitsync"
-	"github.com/dunkbing/memory-go/internal/memory"
+	"github.com/dunkbing/gitmind/internal/cloud"
+	"github.com/dunkbing/gitmind/internal/github"
+	"github.com/dunkbing/gitmind/internal/gitsync"
+	"github.com/dunkbing/gitmind/internal/memory"
 )
 
-// githubClientID is the public client ID of the memory-go GitHub OAuth App,
+// githubClientID is the public client ID of the gitmind GitHub OAuth App,
 // public by design (device flow needs no secret); override with
-// MEMORY_GO_GITHUB_CLIENT_ID.
+// GITMIND_GITHUB_CLIENT_ID.
 var githubClientID = "Ov23liPvy5PXJaaqYI4N"
 
 func clientID() string {
-	if id := os.Getenv("MEMORY_GO_GITHUB_CLIENT_ID"); id != "" {
+	if id := os.Getenv("GITMIND_GITHUB_CLIENT_ID"); id != "" {
 		return id
 	}
 	return githubClientID
@@ -82,7 +82,7 @@ func login(ctx context.Context) (github.Credentials, error) {
 	} else {
 		fmt.Printf("Open %s on any device and enter the code.\n", dc.VerificationURI)
 	}
-	fmt.Println("Waiting for you to approve memory-go on GitHub...")
+	fmt.Println("Waiting for you to approve gitmind on GitHub...")
 	token, err := c.WaitForLogin(ctx, dc)
 	if err != nil {
 		return github.Credentials{}, err
@@ -104,9 +104,9 @@ func login(ctx context.Context) (github.Credentials, error) {
 // repository, creating it (private) when it doesn't exist yet.
 func setupCmd(ctx context.Context, dir string, args []string) error {
 	fs := flag.NewFlagSet("setup", flag.ExitOnError)
-	name := fs.String("repo", "memory-notes", "notes repository: NAME under your account, or OWNER/NAME")
+	name := fs.String("repo", "gitmind-notes", "notes repository: NAME under your account, or OWNER/NAME")
 	public := fs.Bool("public", false, "create the repository as public (default private)")
-	cloudURL := fs.String("cloud", "", "sync with a memory-go cloud server at this URL instead of GitHub")
+	cloudURL := fs.String("cloud", "", "sync with a gitmind cloud server at this URL instead of GitHub")
 	workspace := fs.String("workspace", "", "cloud workspace to sync (default: your personal one)")
 	fs.Parse(args)
 	if *cloudURL != "" {
@@ -139,13 +139,13 @@ func setupCmd(ctx context.Context, dir string, args []string) error {
 		fmt.Printf("✓ Connected to %s\n", repo.HTMLURL)
 	}
 	fmt.Printf("✓ Notes are in %s and sync with GitHub automatically.\n", dir)
-	fmt.Println("\nNext, add memory-go to your agents (see the README):")
-	fmt.Println("  claude mcp add --scope user memory-go -- memory-go")
+	fmt.Println("\nNext, add gitmind to your agents (see the README):")
+	fmt.Println("  claude mcp add --scope user gitmind -- gitmind")
 	return nil
 }
 
 // connectRepo finds or creates the GitHub repository and makes dir a clone of
-// it that authenticates through memory-go. It reports whether the repository
+// it that authenticates through gitmind. It reports whether the repository
 // was created.
 func connectRepo(ctx context.Context, gh *github.Client, login, name string, private bool, dir string, config []string) (github.Repo, bool, error) {
 	full := name
@@ -197,7 +197,7 @@ func attachRepo(ctx context.Context, dir, remote string, config []string) error 
 	return err
 }
 
-// credentialHelperConfig makes git ask memory-go for github.com credentials
+// credentialHelperConfig makes git ask gitmind for github.com credentials
 // in the notes repository only; the empty value first clears helpers from
 // the user's global config for that host.
 func credentialHelperConfig(exe string) []string {
@@ -222,8 +222,8 @@ func visibility(private bool) string {
 	return "public"
 }
 
-// cloudSetup signs in to a memory-go cloud server and makes dir a synced
-// clone of one of its workspaces. Git authenticates through memory-go, which
+// cloudSetup signs in to a gitmind cloud server and makes dir a synced
+// clone of one of its workspaces. Git authenticates through gitmind, which
 // fetches short-lived tokens from the server.
 func cloudSetup(ctx context.Context, dir, base, slug string) error {
 	base = strings.TrimRight(base, "/")
@@ -276,7 +276,7 @@ func cloudSetup(ctx context.Context, dir, base, slug string) error {
 	}
 	fmt.Printf("✓ Connected to workspace %s (%s) on %s as %s\n", ws.Slug, ws.Name, base, me.Login)
 	fmt.Printf("✓ Notes are in %s and sync with the cloud automatically.\n", dir)
-	fmt.Println("\nAI apps that can't run memory-go locally (claude.ai, ChatGPT, mobile) can use the same memory at:")
+	fmt.Println("\nAI apps that can't run gitmind locally (claude.ai, ChatGPT, mobile) can use the same memory at:")
 	fmt.Printf("  %s/mcp\n", base)
 	return nil
 }
@@ -290,7 +290,7 @@ func cloudLogin(ctx context.Context, base string) (*cloud.Credentials, error) {
 				return
 			}
 		}
-		fmt.Printf("Open this link in a browser and approve memory-go:\n\n  %s\n\n", u)
+		fmt.Printf("Open this link in a browser and approve gitmind:\n\n  %s\n\n", u)
 		fmt.Println("If the browser then fails to load a 127.0.0.1 page (e.g. over SSH), copy that page's full address and paste it here.")
 	}
 	var prompt *os.File

@@ -52,7 +52,7 @@ export function sessionContext(store: Store, project: string, budget: number): s
 	const general = byNewest(store.list("general"));
 	const recent = store.recent(20);
 
-	let b = "# Memory (memory-go)\n\n";
+	let b = "# Memory (gitmind)\n\n";
 	b +=
 		"Persistent notes shared across the user's machines and AI apps. Below: pinned notes in full, then an index of other notes; " +
 		"open them with read_note or build_context when relevant, and use search_notes for anything else.\n";

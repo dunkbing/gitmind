@@ -15,7 +15,7 @@ import (
 	"time"
 )
 
-// fakeGitHub serves the device flow and the REST endpoints memory-go uses.
+// fakeGitHub serves the device flow and the REST endpoints gitmind uses.
 func fakeGitHub(t *testing.T) *Client {
 	var polls atomic.Int32
 	repos := map[string]Repo{}
@@ -89,14 +89,14 @@ func TestDeviceFlowAndRepos(t *testing.T) {
 	if u, err := c.User(ctx); err != nil || u.Login != "octo" {
 		t.Fatalf("User = %+v, %v", u, err)
 	}
-	if _, err := c.Repo(ctx, "octo/memory-notes"); !errors.Is(err, ErrNotFound) {
+	if _, err := c.Repo(ctx, "octo/gitmind-notes"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("missing repo: %v", err)
 	}
-	created, err := c.CreateRepo(ctx, "memory-notes", true)
+	created, err := c.CreateRepo(ctx, "gitmind-notes", true)
 	if err != nil || !created.Private {
 		t.Fatalf("CreateRepo = %+v, %v", created, err)
 	}
-	if got, err := c.Repo(ctx, "octo/memory-notes"); err != nil || got.CloneURL != created.CloneURL {
+	if got, err := c.Repo(ctx, "octo/gitmind-notes"); err != nil || got.CloneURL != created.CloneURL {
 		t.Fatalf("Repo after create = %+v, %v", got, err)
 	}
 
@@ -107,7 +107,7 @@ func TestDeviceFlowAndRepos(t *testing.T) {
 
 func TestCredentialsAndHelper(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "sub", "github.json")
-	t.Setenv("MEMORY_GO_CREDENTIALS", path)
+	t.Setenv("GITMIND_CREDENTIALS", path)
 
 	var out bytes.Buffer
 	CredentialHelper("get", strings.NewReader("protocol=https\nhost=github.com\n\n"), &out)
@@ -123,7 +123,7 @@ func TestCredentialsAndHelper(t *testing.T) {
 	}
 
 	out.Reset()
-	CredentialHelper("get", strings.NewReader("protocol=https\nhost=github.com\npath=octo/memory-notes.git\n\n"), &out)
+	CredentialHelper("get", strings.NewReader("protocol=https\nhost=github.com\npath=octo/gitmind-notes.git\n\n"), &out)
 	if out.String() != "username=octo\npassword=gho_test\n" {
 		t.Errorf("get = %q", out.String())
 	}

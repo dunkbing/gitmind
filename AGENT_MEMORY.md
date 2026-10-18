@@ -1,11 +1,11 @@
-## Long-term memory (memory-go MCP)
+## Long-term memory (gitmind MCP)
 
-You have a persistent, shared memory via the `memory-go` MCP server. It is shared
+You have a persistent, shared memory via the `gitmind` MCP server. It is shared
 across my machines and agents (Claude Code, Codex), so treat it as the source of truth
 for context that outlives a single session.
 
 **At the start of a session**
-- If a "Memory (memory-go)" section isn't already in your context, call `project_context`
+- If a "Memory (gitmind)" section isn't already in your context, call `project_context`
   with the project name (the git repository's directory name).
 
 **At the start of a task**

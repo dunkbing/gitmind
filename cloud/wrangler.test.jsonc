@@ -2,12 +2,12 @@
 // is replaced by a local git server through DEV_GIT_BASE). Keep in sync with
 // wrangler.jsonc.
 {
-	"name": "memory-go-cloud-test",
+	"name": "gitmind-test",
 	"main": "src/index.ts",
 	"compatibility_date": "2026-10-01",
 	"compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
 	"durable_objects": { "bindings": [{ "name": "WORKSPACE", "class_name": "Workspace" }] },
 	"migrations": [{ "tag": "v1", "new_sqlite_classes": ["Workspace"] }],
-	"d1_databases": [{ "binding": "DB", "database_name": "memory-go", "database_id": "test", "migrations_dir": "migrations" }],
+	"d1_databases": [{ "binding": "DB", "database_name": "gitmind", "database_id": "test", "migrations_dir": "migrations" }],
 	"kv_namespaces": [{ "binding": "OAUTH_KV", "id": "test" }]
 }

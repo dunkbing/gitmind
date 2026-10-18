@@ -1,9 +1,9 @@
-# memory-go cloud
+# gitmind cloud
 
-The hosted side of [memory-go](../README.md): one memory for every AI app.
+The hosted side of [gitmind](../README.md): one memory for every AI app.
 It serves your notes over MCP to apps that can't run a local binary
 (claude.ai on web, desktop and mobile, ChatGPT), and is also a git remote
-that your laptops' memory-go CLI syncs with.
+that your laptops' gitmind CLI syncs with.
 
 - **Remote MCP endpoint** at `/mcp`, with OAuth 2.1 sign-in (dynamic client
   registration, PKCE), so it can be added as a custom connector in claude.ai
@@ -28,7 +28,7 @@ browser ────────────────────────
                       one Durable Object per workspace (SQLite + FTS5 index)
                          │ reads/writes git with isomorphic-git
                          ▼
-             Artifacts repo per workspace  ◀── git pull/push ── memory-go CLI on laptops
+             Artifacts repo per workspace  ◀── git pull/push ── gitmind CLI on laptops
 ```
 
 Each workspace's Durable Object keeps a search index of its notes and is the
@@ -55,7 +55,7 @@ it) and a domain on Cloudflare.
    and deploys. Re-run it to deploy updates.
 
 People sign in with GitHub's device flow (enter a code on github.com), using
-memory-go's public OAuth App, so there's nothing to register. For the usual
+gitmind's public OAuth App, so there's nothing to register. For the usual
 redirect sign-in, create your own GitHub OAuth App with callback URL
 `https://YOUR-DOMAIN/auth/github/callback` and a client secret, then run
 `GITHUB_CLIENT_ID=... GITHUB_CLIENT_SECRET=... ./scripts/deploy.sh`.

@@ -55,7 +55,7 @@ export interface WriteResult {
 // Files every workspace repository starts with, matching the CLI's init.
 const INIT_FILES: FileChange[] = [
 	{ path: ".gitattributes", content: "*.md merge=union\n" },
-	{ path: ".gitignore", content: ".memory-go/\n" },
+	{ path: ".gitignore", content: ".gitmind/\n" },
 ];
 
 // How long reads trust the index before checking the repository for pushes
@@ -82,7 +82,7 @@ export class Workspace extends DurableObject<Env> {
 			await repoProvider(this.env).create(repoName);
 			const s = await this.openSession();
 			const missing = INIT_FILES.filter((f) => !s.blobs.has(f.path));
-			if (missing.length) await s.commit(missing, "memory-go: init", { name: "memory-go", email: "cloud@memory-go" });
+			if (missing.length) await s.commit(missing, "gitmind: init", { name: "gitmind", email: "cloud@gitmind" });
 			await this.syncIndex(s);
 		});
 	}
@@ -413,7 +413,7 @@ export class Workspace extends DurableObject<Env> {
 				try {
 					await s!.commit(changes, `memory: ${message} (cloud, ${actor.login})`, {
 						name: actor.name || actor.login,
-						email: `${actor.login}@users.memory-go`,
+						email: `${actor.login}@users.gitmind`,
 					});
 				} catch (e) {
 					if (e instanceof ConflictError) continue;

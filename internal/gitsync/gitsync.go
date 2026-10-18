@@ -19,7 +19,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dunkbing/memory-go/internal/lockfile"
+	"github.com/dunkbing/gitmind/internal/lockfile"
 	"golang.org/x/text/unicode/norm"
 )
 
@@ -101,20 +101,35 @@ func Init(ctx context.Context, dir, remote string, config ...string) error {
 			return err
 		}
 	}
-	if err := ensureLine(filepath.Join(dir, ".gitignore"), ".memory-go/"); err != nil {
+	if err := ensureLine(filepath.Join(dir, ".gitignore"), ".gitmind/"); err != nil {
 		return err
 	}
 	if err := ensureLine(filepath.Join(dir, ".gitattributes"), "*.md merge=union"); err != nil {
 		return err
 	}
-	if _, err := r.Commit(ctx, "memory-go: init", ".gitignore", ".gitattributes"); err != nil {
+	if _, err := r.Commit(ctx, "gitmind: init", ".gitignore", ".gitattributes"); err != nil {
 		return err
 	}
 	if remote != "" {
-		_, err := r.Sync(ctx, "memory-go: init")
+		_, err := r.Sync(ctx, "gitmind: init")
 		return err
 	}
 	return nil
+}
+
+// EnsureIgnored makes sure the repository ignores gitmind's local directory
+// (search index, locks), committing .gitignore when it had to change.
+func EnsureIgnored(ctx context.Context, dir string) error {
+	p := filepath.Join(dir, ".gitignore")
+	before, _ := os.ReadFile(p)
+	if err := ensureLine(p, ".gitmind/"); err != nil {
+		return err
+	}
+	if after, _ := os.ReadFile(p); string(after) == string(before) {
+		return nil
+	}
+	_, err := (&Repo{Dir: dir}).Commit(ctx, "gitmind: ignore the local index", ".gitignore")
+	return err
 }
 
 // Configure stores "key=value" settings in the repository's own git config,
@@ -371,7 +386,7 @@ func (r *Repo) identity(ctx context.Context) []string {
 	if _, err := r.run(ctx, "config", "user.email"); err == nil {
 		return nil
 	}
-	return []string{"-c", "user.name=memory-go", "-c", "user.email=memory-go@localhost"}
+	return []string{"-c", "user.name=gitmind", "-c", "user.email=gitmind@localhost"}
 }
 
 func (r *Repo) run(ctx context.Context, args ...string) (string, error) {
@@ -391,10 +406,10 @@ func (r *Repo) runRaw(ctx context.Context, args ...string) (string, error) {
 	return string(out), nil
 }
 
-// lock serializes git operations across every memory-go process sharing the
+// lock serializes git operations across every gitmind process sharing the
 // repository (e.g. several agent sessions on one machine).
 func (r *Repo) lock() (func(), error) {
-	return lockfile.Lock(filepath.Join(r.Dir, ".memory-go", "git.lock"))
+	return lockfile.Lock(filepath.Join(r.Dir, ".gitmind", "git.lock"))
 }
 
 type gitError struct {

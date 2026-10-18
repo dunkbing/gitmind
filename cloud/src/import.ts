@@ -4,7 +4,7 @@
 //   of { name, created_at, chat_messages: [{ sender, text | content[] }] }.
 // - ChatGPT (Settings → Data controls → Export): conversations.json, an array
 //   of { title, create_time, mapping: { id: { message, parent } }, current_node }.
-// - A zip of Markdown files (Basic Memory, Obsidian, memory-go): kept as-is.
+// - A zip of Markdown files (Basic Memory, Obsidian, gitmind): kept as-is.
 
 import { unzipSync } from "fflate";
 import { type Note, format, slugify } from "./engine/notes";

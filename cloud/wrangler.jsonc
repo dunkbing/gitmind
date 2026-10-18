@@ -1,6 +1,6 @@
 {
 	"$schema": "node_modules/wrangler/config-schema.json",
-	"name": "memory-go-cloud",
+	"name": "gitmind",
 	"main": "src/index.ts",
 	"compatibility_date": "2026-10-01",
 	// global_fetch_strictly_public: required to fetch MCP clients' metadata
@@ -11,9 +11,9 @@
 	"vars": {
 		// The public URL of this deployment, without a trailing slash. MCP
 		// clients connect to PUBLIC_URL/mcp.
-		"PUBLIC_URL": "https://memory.dunkbing.dev",
+		"PUBLIC_URL": "https://gitmind.app",
 		// GitHub OAuth App for signing in. With no GITHUB_CLIENT_SECRET, sign-in
-		// uses GitHub's device flow, which needs only this public ID (memory-go's
+		// uses GitHub's device flow, which needs only this public ID (gitmind's
 		// own app, device flow enabled). For redirect sign-in, use your own app
 		// and `wrangler secret put GITHUB_CLIENT_SECRET`.
 		"GITHUB_CLIENT_ID": "Ov23liPvy5PXJaaqYI4N"
@@ -25,10 +25,10 @@
 	"migrations": [{ "tag": "v1", "new_sqlite_classes": ["Workspace"] }],
 
 	"d1_databases": [
-		{ "binding": "DB", "database_name": "memory-go", "database_id": "REPLACE_WITH_D1_ID", "migrations_dir": "migrations" }
+		{ "binding": "DB", "database_name": "gitmind", "database_id": "REPLACE_WITH_D1_ID", "migrations_dir": "migrations" }
 	],
 	"kv_namespaces": [{ "binding": "OAUTH_KV", "id": "REPLACE_WITH_KV_ID" }],
-	"artifacts": [{ "binding": "ARTIFACTS", "namespace": "memory-go" }],
+	"artifacts": [{ "binding": "ARTIFACTS", "namespace": "gitmind" }],
 
-	"routes": [{ "pattern": "memory.dunkbing.dev", "custom_domain": true }]
+	"routes": [{ "pattern": "gitmind.app", "custom_domain": true }]
 }

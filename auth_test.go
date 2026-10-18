@@ -13,9 +13,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dunkbing/memory-go/internal/github"
-	"github.com/dunkbing/memory-go/internal/gitsync"
-	"github.com/dunkbing/memory-go/internal/memory"
+	"github.com/dunkbing/gitmind/internal/github"
+	"github.com/dunkbing/gitmind/internal/gitsync"
+	"github.com/dunkbing/gitmind/internal/memory"
 )
 
 func run(t *testing.T, dir string, name string, args ...string) string {
@@ -70,20 +70,20 @@ func fakeAPI(t *testing.T, existing ...string) (*github.Client, string) {
 func TestConnectRepo(t *testing.T) {
 	ctx := context.Background()
 	gh, root := fakeAPI(t)
-	config := credentialHelperConfig("/opt/memory go/memory-go")
+	config := credentialHelperConfig("/opt/memory go/gitmind")
 
 	// First machine: the repo doesn't exist, so it's created and cloned.
 	laptop := filepath.Join(t.TempDir(), "laptop")
-	repo, created, err := connectRepo(ctx, gh, "octo", "memory-notes", true, laptop, config)
+	repo, created, err := connectRepo(ctx, gh, "octo", "gitmind-notes", true, laptop, config)
 	if err != nil || !created || !repo.Private {
 		t.Fatalf("connectRepo = %+v, %v, %v", repo, created, err)
 	}
-	// An empty value first (clearing global helpers), then memory-go.
+	// An empty value first (clearing global helpers), then gitmind.
 	helpers := run(t, laptop, "git", "config", "--local", "--null", "--get-all", "credential.https://github.com.helper")
-	if helpers != "\x00!'/opt/memory go/memory-go' credential\x00" {
+	if helpers != "\x00!'/opt/memory go/gitmind' credential\x00" {
 		t.Errorf("credential helpers = %q", helpers)
 	}
-	if log := run(t, root, "git", "--git-dir", filepath.Join(root, "memory-notes.git"), "log", "--format=%s"); log != "memory-go: init" {
+	if log := run(t, root, "git", "--git-dir", filepath.Join(root, "gitmind-notes.git"), "log", "--format=%s"); log != "gitmind: init" {
 		t.Errorf("remote history = %q", log)
 	}
 	a, err := memory.Open(laptop, log.New(io.Discard, "", 0))
@@ -98,7 +98,7 @@ func TestConnectRepo(t *testing.T) {
 	}
 	a.Close()
 
-	// Second machine already has a local notes repo of its own (e.g. memory-go
+	// Second machine already has a local notes repo of its own (e.g. gitmind
 	// served before setup ran): connecting merges the two histories.
 	desktop := filepath.Join(t.TempDir(), "desktop")
 	if err := gitsync.Init(ctx, desktop, ""); err != nil {
@@ -109,7 +109,7 @@ func TestConnectRepo(t *testing.T) {
 		t.Fatal(err)
 	}
 	d.Close()
-	if _, created, err := connectRepo(ctx, gh, "octo", "octo/memory-notes", true, desktop, config); err != nil || created {
+	if _, created, err := connectRepo(ctx, gh, "octo", "octo/gitmind-notes", true, desktop, config); err != nil || created {
 		t.Fatalf("connect existing: created=%v err=%v", created, err)
 	}
 	for _, f := range []string{"from-laptop.md", "from-desktop.md"} {
@@ -117,7 +117,7 @@ func TestConnectRepo(t *testing.T) {
 			t.Errorf("desktop is missing %s", f)
 		}
 	}
-	if files := run(t, root, "git", "--git-dir", filepath.Join(root, "memory-notes.git"), "ls-tree", "-r", "--name-only", "main"); !strings.Contains(files, "from-desktop.md") {
+	if files := run(t, root, "git", "--git-dir", filepath.Join(root, "gitmind-notes.git"), "ls-tree", "-r", "--name-only", "main"); !strings.Contains(files, "from-desktop.md") {
 		t.Errorf("desktop note wasn't pushed:\n%s", files)
 	}
 
@@ -127,7 +127,7 @@ func TestConnectRepo(t *testing.T) {
 		t.Fatal(err)
 	}
 	run(t, other, "git", "remote", "add", "origin", "https://example.com/else.git")
-	if _, _, err := connectRepo(ctx, gh, "octo", "memory-notes", true, other, config); err == nil || !strings.Contains(err.Error(), "already syncs") {
+	if _, _, err := connectRepo(ctx, gh, "octo", "gitmind-notes", true, other, config); err == nil || !strings.Contains(err.Error(), "already syncs") {
 		t.Errorf("connecting a dir with another remote: %v", err)
 	}
 
@@ -140,9 +140,9 @@ func TestConnectRepo(t *testing.T) {
 // TestGitUsesCredentialHelper builds the binary and checks that git, in a
 // repository set up by setup, gets the saved token from it.
 func TestGitUsesCredentialHelper(t *testing.T) {
-	bin := filepath.Join(t.TempDir(), "memory-go")
+	bin := filepath.Join(t.TempDir(), "gitmind")
 	run(t, ".", "go", "build", "-o", bin, ".")
-	t.Setenv("MEMORY_GO_CREDENTIALS", filepath.Join(t.TempDir(), "github.json"))
+	t.Setenv("GITMIND_CREDENTIALS", filepath.Join(t.TempDir(), "github.json"))
 	if err := github.SaveCredentials(github.Credentials{Login: "octo", Token: "gho_test"}); err != nil {
 		t.Fatal(err)
 	}
@@ -152,7 +152,7 @@ func TestGitUsesCredentialHelper(t *testing.T) {
 	}
 	cmd := exec.Command("git", "credential", "fill")
 	cmd.Dir = dir
-	cmd.Stdin = strings.NewReader("protocol=https\nhost=github.com\npath=octo/memory-notes.git\n\n")
+	cmd.Stdin = strings.NewReader("protocol=https\nhost=github.com\npath=octo/gitmind-notes.git\n\n")
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
 	out, err := cmd.CombinedOutput()
 	if err != nil || !strings.Contains(string(out), "username=octo\npassword=gho_test") {

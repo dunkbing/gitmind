@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dunkbing/memory-go/internal/index"
-	"github.com/dunkbing/memory-go/internal/memory"
-	"github.com/dunkbing/memory-go/internal/notes"
+	"github.com/dunkbing/gitmind/internal/index"
+	"github.com/dunkbing/gitmind/internal/memory"
+	"github.com/dunkbing/gitmind/internal/notes"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -87,7 +87,7 @@ type listArgs struct {
 type noArgs struct{}
 
 func New(app *memory.App, version string) *mcp.Server {
-	s := mcp.NewServer(&mcp.Implementation{Name: "memory-go", Version: version}, &mcp.ServerOptions{Instructions: instructions})
+	s := mcp.NewServer(&mcp.Implementation{Name: "gitmind", Version: version}, &mcp.ServerOptions{Instructions: instructions})
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "search_notes",

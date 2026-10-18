@@ -30,7 +30,7 @@ class ArtifactsProvider implements RepoProvider {
 
 	async create(name: string) {
 		try {
-			await this.artifacts.create(name, { setDefaultBranch: "main", description: "memory-go workspace" });
+			await this.artifacts.create(name, { setDefaultBranch: "main", description: "gitmind workspace" });
 		} catch (e) {
 			if (!/exist/i.test(String((e as Error)?.message ?? e))) throw e;
 		}

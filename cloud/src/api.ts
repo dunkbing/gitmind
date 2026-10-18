@@ -1,4 +1,4 @@
-// The API the memory-go CLI calls with an OAuth access token, to find its
+// The API the gitmind CLI calls with an OAuth access token, to find its
 // workspaces and get short-lived git credentials for them.
 
 import { getUser, workspaceFor, workspacesFor } from "./accounts";

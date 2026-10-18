@@ -14,11 +14,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dunkbing/memory-go/internal/gitsync"
-	"github.com/dunkbing/memory-go/internal/index"
-	"github.com/dunkbing/memory-go/internal/lockfile"
-	"github.com/dunkbing/memory-go/internal/notes"
-	"github.com/dunkbing/memory-go/internal/secrets"
+	"github.com/dunkbing/gitmind/internal/gitsync"
+	"github.com/dunkbing/gitmind/internal/index"
+	"github.com/dunkbing/gitmind/internal/lockfile"
+	"github.com/dunkbing/gitmind/internal/notes"
+	"github.com/dunkbing/gitmind/internal/secrets"
 	"golang.org/x/text/unicode/norm"
 )
 
@@ -43,9 +43,14 @@ type App struct {
 
 func Open(dir string, logger *log.Logger) (*App, error) {
 	if !gitsync.IsRepo(dir) {
-		return nil, fmt.Errorf("%s is not a notes repository; run: memory-go init", dir)
+		return nil, fmt.Errorf("%s is not a notes repository; run: gitmind init", dir)
 	}
-	ix, err := index.Open(filepath.Join(dir, ".memory-go", "index.db"))
+	// The local index must never be committed, even in repositories set up
+	// without gitmind's .gitignore.
+	if err := gitsync.EnsureIgnored(context.Background(), dir); err != nil {
+		return nil, err
+	}
+	ix, err := index.Open(filepath.Join(dir, ".gitmind", "index.db"))
 	if err != nil {
 		return nil, err
 	}
@@ -466,7 +471,7 @@ func (a *App) Delete(ctx context.Context, id string) (string, error) {
 	return rel, nil
 }
 
-// Sync commits edits made outside memory-go (e.g. in Obsidian), pulls,
+// Sync commits edits made outside gitmind (e.g. in Obsidian), pulls,
 // pushes, and reindexes whatever changed.
 func (a *App) Sync(ctx context.Context) (gitsync.Result, error) {
 	// A pull rewrites notes, so it must not interleave with an edit's
@@ -491,10 +496,10 @@ func (a *App) Sync(ctx context.Context) (gitsync.Result, error) {
 }
 
 // writeLock serializes every read-modify-write of notes, across goroutines
-// and across memory-go processes sharing the repository, so concurrent edits
+// and across gitmind processes sharing the repository, so concurrent edits
 // can't overwrite each other.
 func (a *App) writeLock() (func(), error) {
-	return lockfile.Lock(filepath.Join(a.Store.Root, ".memory-go", "write.lock"))
+	return lockfile.Lock(filepath.Join(a.Store.Root, ".gitmind", "write.lock"))
 }
 
 func (a *App) save(ctx context.Context, n notes.Note, verb string) error {

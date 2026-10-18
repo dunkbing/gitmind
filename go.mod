@@ -1,4 +1,4 @@
-module github.com/dunkbing/memory-go
+module github.com/dunkbing/gitmind
 
 go 1.26.0
 

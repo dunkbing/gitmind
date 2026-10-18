@@ -1,4 +1,4 @@
-// Package cloud connects the CLI to a memory-go cloud server: it signs in
+// Package cloud connects the CLI to a gitmind cloud server: it signs in
 // with OAuth (dynamic client registration, PKCE and a loopback redirect, as
 // RFC 8252 describes for native apps), stores the login, and fetches
 // short-lived git credentials for a workspace's repository.
@@ -36,14 +36,14 @@ type Credentials struct {
 }
 
 func Path() (string, error) {
-	if p := os.Getenv("MEMORY_GO_CLOUD_CREDENTIALS"); p != "" {
+	if p := os.Getenv("GITMIND_CLOUD_CREDENTIALS"); p != "" {
 		return p, nil
 	}
 	dir, err := os.UserConfigDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, "memory-go", "cloud.json"), nil
+	return filepath.Join(dir, "gitmind", "cloud.json"), nil
 }
 
 func Load() (*Credentials, error) {
@@ -53,7 +53,7 @@ func Load() (*Credentials, error) {
 	}
 	data, err := os.ReadFile(p)
 	if errors.Is(err, os.ErrNotExist) {
-		return nil, errors.New("not connected to a memory-go cloud; run `memory-go setup --cloud URL`")
+		return nil, errors.New("not connected to a gitmind cloud; run `gitmind setup --cloud URL`")
 	} else if err != nil {
 		return nil, err
 	}
@@ -139,7 +139,7 @@ func Login(ctx context.Context, base string, open func(string), prompt io.Reader
 			return
 		}
 		results <- r.URL.Query()
-		fmt.Fprintln(w, "memory-go is signed in. You can close this tab and return to the terminal.")
+		fmt.Fprintln(w, "gitmind is signed in. You can close this tab and return to the terminal.")
 	})}
 	go srv.Serve(ln)
 	defer srv.Close()
@@ -192,7 +192,7 @@ func Login(ctx context.Context, base string, open func(string), prompt io.Reader
 
 func register(ctx context.Context, base, redirect string) (string, error) {
 	body, _ := json.Marshal(map[string]any{
-		"client_name":                "memory-go CLI",
+		"client_name":                "gitmind CLI",
 		"redirect_uris":              []string{redirect},
 		"token_endpoint_auth_method": "none",
 		"grant_types":                []string{"authorization_code", "refresh_token"},
@@ -213,7 +213,7 @@ func register(ctx context.Context, base, redirect string) (string, error) {
 	}
 	data, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if resp.StatusCode >= 300 || json.Unmarshal(data, &out) != nil || out.ClientID == "" {
-		return "", fmt.Errorf("%s doesn't look like a memory-go cloud (registration: %s)", base, resp.Status)
+		return "", fmt.Errorf("%s doesn't look like a gitmind cloud (registration: %s)", base, resp.Status)
 	}
 	return out.ClientID, nil
 }
@@ -255,7 +255,7 @@ func (c *Credentials) Fresh(ctx context.Context) error {
 		return nil
 	}
 	if c.RefreshToken == "" {
-		return errors.New("the cloud login expired; run `memory-go setup --cloud` again")
+		return errors.New("the cloud login expired; run `gitmind setup --cloud` again")
 	}
 	t, err := postToken(ctx, c.URL, url.Values{
 		"grant_type":    {"refresh_token"},
@@ -264,7 +264,7 @@ func (c *Credentials) Fresh(ctx context.Context) error {
 		"resource":      {c.URL + "/mcp"},
 	})
 	if err != nil {
-		return fmt.Errorf("the cloud login expired (%v); run `memory-go setup --cloud` again", err)
+		return fmt.Errorf("the cloud login expired (%v); run `gitmind setup --cloud` again", err)
 	}
 	c.setToken(t)
 	return c.Save()
@@ -321,7 +321,7 @@ func (c *Credentials) api(ctx context.Context, method, path string, out any) err
 		}
 		json.Unmarshal(data, &e)
 		if resp.StatusCode == http.StatusUnauthorized {
-			return errors.New("the cloud rejected the saved login; run `memory-go setup --cloud` again")
+			return errors.New("the cloud rejected the saved login; run `gitmind setup --cloud` again")
 		}
 		return fmt.Errorf("%s %s: %s %s", method, path, resp.Status, e.Error)
 	}

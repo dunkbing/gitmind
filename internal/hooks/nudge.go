@@ -19,7 +19,7 @@ type StopInput struct {
 }
 
 const nudgeText = `Before you finish: this session did substantial work. If it produced anything a future session ` +
-	`would otherwise have to rediscover, save it to memory now with memory-go (search first and update an existing ` +
+	`would otherwise have to rediscover, save it to memory now with gitmind (search first and update an existing ` +
 	`note rather than duplicating). Worth saving: decisions and their reasons, the user's preferences and corrections, ` +
 	`gotchas and root causes, setup or deploy knowledge not in the repo. Not worth saving: routine steps, anything ` +
 	`already in the code or git history, unconfirmed suggestions, secrets. If nothing qualifies, just stop; don't save noise.`
@@ -97,7 +97,7 @@ func countToolCalls(transcript string) (total, lastWrite int, err error) {
 }
 
 // isMemoryWrite matches write tools of any memory MCP server, e.g.
-// mcp__memory-go__write_note.
+// mcp__gitmind__write_note.
 func isMemoryWrite(tool string) bool {
 	if !strings.HasPrefix(tool, "mcp__") {
 		return false

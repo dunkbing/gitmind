@@ -75,7 +75,7 @@ describe("remote MCP endpoint", () => {
 
 	it("sees notes pushed with git from a laptop, and gives the CLI git credentials", async () => {
 		const dave = await signedIn("dave");
-		const { token } = await connect(dave, { clientName: "memory-go CLI" });
+		const { token } = await connect(dave, { clientName: "gitmind CLI" });
 		const me = await SELF.fetch(`${BASE}/mcp/api/me`, { headers: { Authorization: `Bearer ${token}` } });
 		expect(await me.json()).toMatchObject({ login: "dave", workspaces: [{ slug: "dave", kind: "personal", role: "owner" }] });
 

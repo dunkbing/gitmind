@@ -1,17 +1,17 @@
-# memory-go
+# gitmind
 
 Persistent memory for coding agents (Claude Code, Codex, anything that speaks
 MCP), stored as Markdown notes in a git repository and synced between machines
 through a remote such as a private GitHub repo.
 
-Each machine runs `memory-go` as a local stdio MCP server. There is no central
+Each machine runs `gitmind` as a local stdio MCP server. There is no central
 server: your agents keep using their normal logins (including Claude Max), and
 git does the syncing.
 
 ```
-Claude Code / Codex ──stdio──▶ memory-go
-                                 ├─ ~/.memory-go/**/*.md        notes (git working tree)
-                                 └─ ~/.memory-go/.memory-go/    search index + lock (not in git)
+Claude Code / Codex ──stdio──▶ gitmind
+                                 ├─ ~/.gitmind/**/*.md        notes (git working tree)
+                                 └─ ~/.gitmind/.gitmind/    search index + lock (not in git)
                                         │
                                  commit on every write · pull at startup · push in the background
                                         ▼
@@ -24,41 +24,41 @@ Claude Code / Codex ──stdio──▶ memory-go
 Cloudflare (AGPL-3.0): the same memory over a remote MCP endpoint for
 claude.ai, ChatGPT and mobile apps, a web app, chat-history import and team
 workspaces. Laptops sync with it through this CLI:
-`memory-go setup --cloud https://YOUR-DOMAIN`.
+`gitmind setup --cloud https://YOUR-DOMAIN`.
 
 ## Install
 
 ```bash
-go install github.com/dunkbing/memory-go@latest
-memory-go setup
+go install github.com/dunkbing/gitmind@latest
+gitmind setup
 ```
 
 `setup` logs you in to GitHub (it copies a one-time code and opens
 github.com/login/device in your browser; over SSH it prints the link to open on
-any device), then connects `~/.memory-go` to your `memory-notes` repository,
+any device), then connects `~/.gitmind` to your `gitmind-notes` repository,
 creating it as a private repository if it doesn't exist yet. Run the same
 command on every machine. `--repo NAME` or `--repo OWNER/NAME` picks another
 repository.
 
-memory-go handles git authentication for the notes repository itself (it's
+gitmind handles git authentication for the notes repository itself (it's
 registered as git's credential helper for that repository only), so pushes
-work without `gh` or SSH keys. `memory-go auth status|logout` manages the login,
+work without `gh` or SSH keys. `gitmind auth status|logout` manages the login,
 saved in your user config directory, readable only by you.
 
-Prefer your own git setup? `memory-go init <git-url>` clones any remote and
+Prefer your own git setup? `gitmind init <git-url>` clones any remote and
 uses your existing git credentials instead.
 
 ### Claude Code
 
 ```bash
-claude mcp add --scope user memory-go -- memory-go
+claude mcp add --scope user gitmind -- gitmind
 ```
 
 ### Codex (`~/.codex/config.toml`)
 
 ```toml
-[mcp_servers.memory-go]
-command = "memory-go"
+[mcp_servers.gitmind]
+command = "gitmind"
 ```
 
 Then append [AGENT_MEMORY.md](AGENT_MEMORY.md) to `~/.claude/CLAUDE.md` and
@@ -72,22 +72,22 @@ Two hooks make memory automatic. Add to `~/.claude/settings.json`:
 {
   "hooks": {
     "SessionStart": [
-      { "hooks": [{ "type": "command", "command": "memory-go context", "timeout": 30 }] }
+      { "hooks": [{ "type": "command", "command": "gitmind context", "timeout": 30 }] }
     ],
     "Stop": [
-      { "hooks": [{ "type": "command", "command": "memory-go nudge", "timeout": 10 }] }
+      { "hooks": [{ "type": "command", "command": "gitmind nudge", "timeout": 10 }] }
     ]
   }
 }
 ```
 
-- **`memory-go context`** (recall) loads pinned notes in full, plus a one-line
+- **`gitmind context`** (recall) loads pinned notes in full, plus a one-line
   index of the current project's notes, your `general/` notes and recent
   activity elsewhere. The project is the git repository's name (the main
   checkout's name inside a worktree). Output stays under Claude Code's
   10,000-character hook limit; whatever doesn't fit is counted, with a pointer
   to `list_notes`.
-- **`memory-go nudge`** (capture): when the agent is about to stop after 10 or
+- **`gitmind nudge`** (capture): when the agent is about to stop after 10 or
   more tool calls with no memory write, it's reminded once to save what's worth
   keeping, and told to save nothing rather than noise. `--threshold N` changes
   the bar.
@@ -128,10 +128,10 @@ as AGENT_MEMORY.md tells them to.
 ## CLI
 
 ```
-memory-go [--dir DIR] [--sync-interval 3m] [setup|auth|serve|context|nudge|init [REMOTE]|sync|reindex|search QUERY|recent [N]|version]
+gitmind [--dir DIR] [--sync-interval 3m] [setup|auth|serve|context|nudge|init [REMOTE]|sync|reindex|search QUERY|recent [N]|version]
 ```
 
-The notes directory defaults to `$MEMORY_GO_DIR`, then `~/.memory-go`.
+The notes directory defaults to `$GITMIND_DIR`, then `~/.gitmind`.
 Notes use the same frontmatter and `- [category] fact #tag` / `[[Link]]` style
 as Basic Memory, so the folder opens as an Obsidian vault. Two frontmatter
 flags are special: `pinned: true` shows the note in full at session start, and
@@ -151,4 +151,4 @@ line like `- depends on [[Auth service]]` records "depends on" as the relation.
 
 The GitHub login uses the device flow of a GitHub OAuth App (device flow
 enabled, no client secret needed). Its client ID is public and set in
-`auth.go`; forks can override it with `MEMORY_GO_GITHUB_CLIENT_ID`.
+`auth.go`; forks can override it with `GITMIND_GITHUB_CLIENT_ID`.
