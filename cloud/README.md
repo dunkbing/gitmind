@@ -43,19 +43,22 @@ pushes from elsewhere at most every 2 seconds. The note format and engine
 You need a Cloudflare account on the Workers Paid plan (Artifacts requires
 it) and a domain on Cloudflare.
 
-1. **GitHub OAuth App** for signing in: <https://github.com/settings/applications/new>
-   with homepage `https://YOUR-DOMAIN` and callback URL
-   `https://YOUR-DOMAIN/auth/github/callback`. Generate a client secret.
-2. **Configure**: in `wrangler.jsonc`, set `PUBLIC_URL` and the `routes`
+1. **Configure**: in `wrangler.jsonc`, set `PUBLIC_URL` and the `routes`
    pattern to your domain.
-3. **Deploy**:
+2. **Deploy**:
    ```bash
    bun install
    bunx wrangler login
-   GITHUB_CLIENT_ID=... GITHUB_CLIENT_SECRET=... ./scripts/deploy.sh
+   ./scripts/deploy.sh
    ```
-   The script creates the D1 database and KV namespace, applies migrations,
-   deploys, and stores the secret. Re-run it to deploy updates.
+   The script creates the D1 database and KV namespace, applies migrations
+   and deploys. Re-run it to deploy updates.
+
+People sign in with GitHub's device flow (enter a code on github.com), using
+memory-go's public OAuth App, so there's nothing to register. For the usual
+redirect sign-in, create your own GitHub OAuth App with callback URL
+`https://YOUR-DOMAIN/auth/github/callback` and a client secret, then run
+`GITHUB_CLIENT_ID=... GITHUB_CLIENT_SECRET=... ./scripts/deploy.sh`.
 
 Then sign in at your domain and follow its **Connect** page.
 

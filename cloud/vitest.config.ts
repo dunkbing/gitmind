@@ -19,7 +19,8 @@ export default defineConfig(async () => {
 								bindings: {
 									PUBLIC_URL: "https://memory.test",
 									GITHUB_CLIENT_ID: "test",
-									GITHUB_CLIENT_SECRET: "test",
+									GITHUB_WEB_URL: "http://127.0.0.1:18765/__github",
+									GITHUB_API_URL: "http://127.0.0.1:18765/__github",
 									DEV_GIT_BASE: "http://127.0.0.1:18765",
 									DEV_LOGIN: "1",
 									FRESHNESS_MS: "0",

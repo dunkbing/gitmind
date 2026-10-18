@@ -77,11 +77,24 @@ const notFound = (c: C, user: User | null, message: string) => {
 
 const safeNext = (next: string | undefined) => (next && next.startsWith("/") && !next.startsWith("//") ? next : "/");
 
-web.get("/login", (c) => {
+// GitHub endpoints, overridable for tests.
+const githubWeb = (env: Env) => env.GITHUB_WEB_URL ?? "https://github.com";
+const githubApi = (env: Env) => env.GITHUB_API_URL ?? "https://api.github.com";
+
+async function githubUser(env: Env, token: string) {
+	const res = await fetch(`${githubApi(env)}/user`, {
+		headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json", "User-Agent": "memory-go-cloud" },
+	});
+	if (!res.ok) throw new Error(`Couldn't read your GitHub profile (${res.status}).`);
+	return (await res.json()) as { id: number; login: string; name?: string; avatar_url?: string };
+}
+
+web.get("/login", async (c) => {
 	if (c.env.DEV_LOGIN === "1" && c.req.query("dev")) return c.redirect(`/dev/login?login=${encodeURIComponent(c.req.query("dev")!)}&next=${encodeURIComponent(c.req.query("next") ?? "/")}`);
+	if (!c.env.GITHUB_CLIENT_SECRET) return deviceLogin(c);
 	const state = crypto.randomUUID();
 	setCookie(c, STATE, `${state}|${safeNext(c.req.query("next"))}`, { httpOnly: true, secure: true, sameSite: "Lax", path: "/", maxAge: 600 });
-	const u = new URL("https://github.com/login/oauth/authorize");
+	const u = new URL(`${githubWeb(c.env)}/login/oauth/authorize`);
 	u.searchParams.set("client_id", c.env.GITHUB_CLIENT_ID);
 	u.searchParams.set("redirect_uri", `${c.env.PUBLIC_URL}/auth/github/callback`);
 	u.searchParams.set("state", state);
@@ -94,7 +107,7 @@ web.get("/auth/github/callback", async (c) => {
 	deleteCookie(c, STATE, { path: "/", secure: true });
 	if (!state || state !== c.req.query("state")) return page({ title: "Sign-in failed", error: "The sign-in link expired or was opened in another browser. Try again." }, `<p><a href="/login">Sign in again</a></p>`);
 	if (c.req.query("error")) return page({ title: "Sign-in cancelled", error: "GitHub sign-in was cancelled." }, `<p><a href="/login">Try again</a></p>`);
-	const tokenRes = await fetch("https://github.com/login/oauth/access_token", {
+	const tokenRes = await fetch(`${githubWeb(c.env)}/login/oauth/access_token`, {
 		method: "POST",
 		headers: { Accept: "application/json", "Content-Type": "application/json" },
 		body: JSON.stringify({
@@ -106,12 +119,79 @@ web.get("/auth/github/callback", async (c) => {
 	});
 	const token = (await tokenRes.json()) as { access_token?: string; error_description?: string };
 	if (!token.access_token) return page({ title: "Sign-in failed", error: `GitHub sign-in failed: ${token.error_description ?? "no token"}` }, "");
-	const ghRes = await fetch("https://api.github.com/user", {
-		headers: { Authorization: `Bearer ${token.access_token}`, Accept: "application/vnd.github+json", "User-Agent": "memory-go-cloud" },
+	try {
+		return finishSignIn(c, await signIn(c.env, await githubUser(c.env, token.access_token)), next);
+	} catch (e) {
+		return page({ title: "Sign-in failed", error: errMessage(e) }, "");
+	}
+});
+
+// Without a client secret (GITHUB_CLIENT_SECRET unset), sign-in uses GitHub's
+// device flow, which needs only the OAuth App's public client ID: the page
+// shows a code, the user approves it on github.com, and the page polls until
+// GitHub confirms. Self-hosters can then sign in with memory-go's public app
+// and skip creating their own.
+const DEVICE_LOGIN = "memory-go-login:";
+
+async function deviceLogin(c: C) {
+	const res = await fetch(`${githubWeb(c.env)}/login/device/code`, {
+		method: "POST",
+		headers: { Accept: "application/json", "Content-Type": "application/json" },
+		body: JSON.stringify({ client_id: c.env.GITHUB_CLIENT_ID, scope: "read:user" }),
 	});
-	if (!ghRes.ok) return page({ title: "Sign-in failed", error: `Couldn't read your GitHub profile (${ghRes.status}).` }, "");
-	const gh = (await ghRes.json()) as { id: number; login: string; name?: string; avatar_url?: string };
-	return finishSignIn(c, await signIn(c.env, gh), next);
+	const dc = (await res.json()) as { device_code?: string; user_code?: string; verification_uri?: string; interval?: number; expires_in?: number };
+	if (!dc.device_code) return page({ title: "Sign-in unavailable", error: `GitHub didn't start a sign-in (${res.status}). Is device flow enabled for the OAuth App?` }, "");
+	const id = crypto.randomUUID();
+	await c.env.OAUTH_KV.put(DEVICE_LOGIN + id, JSON.stringify({ device: dc.device_code, next: safeNext(c.req.query("next")), interval: dc.interval ?? 5 }), {
+		expirationTtl: Math.max(60, dc.expires_in ?? 900),
+	});
+	const out = page(
+		{ title: "Sign in with GitHub" },
+		`<div class="hero card"><h1>Sign in with GitHub</h1>
+		<p>Enter this code on GitHub to confirm it's you:</p>
+		<p style="font:600 30px ui-monospace,monospace;letter-spacing:.08em;margin:8px 0">${escape(dc.user_code!)}</p>
+		<p><a class="btn" href="${escape(dc.verification_uri!)}" target="_blank" rel="noopener">Open GitHub</a></p>
+		<p class="muted" id="status">Waiting for you to approve memory-go on GitHub…</p></div>
+		<script>
+		(async () => {
+			const status = document.getElementById("status");
+			for (;;) {
+				await new Promise((r) => setTimeout(r, ${(dc.interval ?? 5) * 1000}));
+				const res = await fetch("/login/poll", { method: "POST" });
+				const r = await res.json();
+				if (r.done) { location.href = r.next; return; }
+				if (r.error) { status.textContent = r.error; return; }
+			}
+		})();
+		</script>`,
+	);
+	// Bind the pending sign-in to this browser, so a leaked poll id is useless.
+	// (Set on the response itself: page() doesn't go through Hono's context.)
+	out.headers.append("Set-Cookie", `${STATE}=${id}; Path=/; Max-Age=900; HttpOnly; Secure; SameSite=Lax`);
+	return out;
+}
+
+web.post("/login/poll", async (c) => {
+	const id = getCookie(c, STATE);
+	const pending = id ? await c.env.OAUTH_KV.get<{ device: string; next: string }>(DEVICE_LOGIN + id, "json") : null;
+	if (!id || !pending) return c.json({ error: "This sign-in expired. Reload the page to start again." });
+	const res = await fetch(`${githubWeb(c.env)}/login/oauth/access_token`, {
+		method: "POST",
+		headers: { Accept: "application/json", "Content-Type": "application/json" },
+		body: JSON.stringify({ client_id: c.env.GITHUB_CLIENT_ID, device_code: pending.device, grant_type: "urn:ietf:params:oauth:grant-type:device_code" }),
+	});
+	const t = (await res.json()) as { access_token?: string; error?: string };
+	if (t.error === "authorization_pending" || t.error === "slow_down") return c.json({ pending: true });
+	await c.env.OAUTH_KV.delete(DEVICE_LOGIN + id);
+	deleteCookie(c, STATE, { path: "/", secure: true });
+	if (!t.access_token) return c.json({ error: t.error === "access_denied" ? "Sign-in was denied on GitHub." : `GitHub sign-in failed (${t.error ?? res.status}). Reload to try again.` });
+	try {
+		const user = await signIn(c.env, await githubUser(c.env, t.access_token));
+		setCookie(c, SESSION, await createSession(c.env, user.id), { httpOnly: true, secure: true, sameSite: "Lax", path: "/", maxAge: 30 * 86400 });
+		return c.json({ done: true, next: pending.next });
+	} catch (e) {
+		return c.json({ error: errMessage(e) });
+	}
 });
 
 // Local development and tests: sign in as any GitHub login without GitHub.

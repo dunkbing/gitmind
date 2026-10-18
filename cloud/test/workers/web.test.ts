@@ -142,3 +142,23 @@ describe("web app", () => {
 		expect((await tool(kimToken, "search_notes", { query: "rotation", workspace: "acme-platform" })).isError).toBe(true);
 	});
 });
+
+describe("GitHub sign-in without a client secret", () => {
+	it("uses the device flow: shows a code, polls, then signs in", async () => {
+		const b = new Browser();
+		const start = await b.fetch("/login?next=%2Fconnect");
+		const html = await start.text();
+		expect(start.status).toBe(200);
+		expect(html).toContain("ABCD-1234");
+		expect(html).toContain("https://github.com/login/device");
+
+		expect(await (await b.fetch("/login/poll", { method: "POST" })).json()).toEqual({ pending: true });
+		expect(await (await b.fetch("/login/poll", { method: "POST" })).json()).toEqual({ done: true, next: "/connect" });
+		// Signed in, with a personal workspace named after the GitHub login.
+		expect((await b.fetch("/")).headers.get("Location")).toBe("/w/octo-gh");
+
+		// The poll is bound to the browser that started it.
+		const other = new Browser();
+		expect(await (await other.fetch("/login/poll", { method: "POST" })).json()).toMatchObject({ error: expect.stringContaining("expired") });
+	});
+});

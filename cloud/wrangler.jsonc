@@ -12,8 +12,11 @@
 		// The public URL of this deployment, without a trailing slash. MCP
 		// clients connect to PUBLIC_URL/mcp.
 		"PUBLIC_URL": "https://memory.dunkbing.dev",
-		// GitHub OAuth App for signing in (its secret: `wrangler secret put GITHUB_CLIENT_SECRET`).
-		"GITHUB_CLIENT_ID": "REPLACE_WITH_GITHUB_CLIENT_ID"
+		// GitHub OAuth App for signing in. With no GITHUB_CLIENT_SECRET, sign-in
+		// uses GitHub's device flow, which needs only this public ID (memory-go's
+		// own app, device flow enabled). For redirect sign-in, use your own app
+		// and `wrangler secret put GITHUB_CLIENT_SECRET`.
+		"GITHUB_CLIENT_ID": "Ov23liPvy5PXJaaqYI4N"
 	},
 
 	"durable_objects": {

@@ -19,8 +19,36 @@ export async function startGitServer(port = 0): Promise<GitServer> {
 		execFileSync("git", ["init", "-q", "--bare", "-b", "main", p]);
 		return p;
 	};
+	const polls = new Map<string, number>();
 	const server: Server = createServer((req, res) => {
 		const url = new URL(req.url!, "http://localhost");
+		// A fake GitHub for the device-flow sign-in (GITHUB_WEB_URL /
+		// GITHUB_API_URL in tests): the first poll is pending, then approved.
+		if (url.pathname.startsWith("/__github/")) {
+			res.setHeader("Content-Type", "application/json");
+			const path = url.pathname.slice("/__github".length);
+			if (req.method === "POST" && path === "/login/device/code") {
+				const device = `dev-${polls.size + 1}`;
+				polls.set(device, 0);
+				return res.end(JSON.stringify({ device_code: device, user_code: "ABCD-1234", verification_uri: "https://github.com/login/device", interval: 1, expires_in: 900 }));
+			}
+			if (req.method === "POST" && path === "/login/oauth/access_token") {
+				let body = "";
+				req.on("data", (c) => (body += c));
+				req.on("end", () => {
+					const device = JSON.parse(body).device_code;
+					const n = (polls.get(device) ?? 0) + 1;
+					polls.set(device, n);
+					res.end(JSON.stringify(n === 1 ? { error: "authorization_pending" } : { access_token: `gh-token-${device}` }));
+				});
+				return;
+			}
+			if (req.method === "GET" && path === "/user" && /^Bearer gh-token-/.test(req.headers.authorization ?? "")) {
+				return res.end(JSON.stringify({ id: 4242, login: "octo-gh", name: "Octo", avatar_url: null }));
+			}
+			res.statusCode = 404;
+			return res.end("{}");
+		}
 		// Test-only endpoint standing in for Artifacts' create().
 		if (req.method === "POST" && url.pathname === "/__create") {
 			const name = url.searchParams.get("name") ?? "";
