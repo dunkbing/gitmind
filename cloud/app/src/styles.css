@@ -233,15 +233,128 @@
 	background: var(--accent-soft);
 	color: var(--ink);
 }
+/* The find bar (editor/searchPanel.ts): floats at the top of the note. */
 .gm-editor .cm-panels {
+	background: transparent;
+	border: none !important;
+	z-index: 15;
+}
+.gm-editor .cm-panels-top {
+	position: sticky;
+	top: 44px;
+}
+.gm-find {
+	margin: 0 0 12px;
+	padding: 6px;
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
 	background: var(--surface);
-	border-color: var(--line);
+	border: 1px solid var(--line);
+	border-radius: 10px;
+	box-shadow: 0 8px 28px rgb(0 0 0 / 0.1);
+	font-family: var(--font-sans);
+	font-size: 13.5px;
+}
+.gm-find-row {
+	display: flex;
+	align-items: center;
+	gap: 2px;
+}
+.gm-find-row[hidden] {
+	display: none;
+}
+.gm-find-field,
+.gm-find-field-solo {
+	flex: 1;
+	min-width: 0;
+	display: flex;
+	align-items: center;
+	gap: 2px;
+	background: var(--paper);
+	border: 1px solid var(--line);
+	border-radius: 7px;
+	padding: 0 4px 0 0;
+	margin-right: 4px;
+}
+.gm-find-field:focus-within,
+.gm-find-field-solo:focus {
+	border-color: var(--accent);
+}
+.gm-find-none .gm-find-field {
+	border-color: color-mix(in srgb, var(--danger) 60%, transparent);
+}
+.gm-find-input {
+	flex: 1;
+	min-width: 0;
+	background: transparent;
+	border: none;
+	outline: none !important;
+	color: var(--ink);
+	padding: 5px 9px;
+	font: inherit;
+}
+.gm-find-field-solo {
+	padding: 5px 9px;
+}
+.gm-find-input::placeholder {
+	color: var(--ink-muted);
+	opacity: 0.7;
+}
+.gm-find-count {
+	color: var(--ink-muted);
+	font-size: 12px;
+	white-space: nowrap;
+	padding: 0 6px;
+	font-variant-numeric: tabular-nums;
+}
+.gm-find-none .gm-find-count {
+	color: var(--danger);
+}
+.gm-find-toggle,
+.gm-find-btn,
+.gm-find-text {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	height: 26px;
+	min-width: 26px;
+	padding: 0 5px;
+	border-radius: 6px;
+	color: var(--ink-muted);
+	background: transparent;
+	border: none;
+	font: inherit;
+	cursor: pointer;
+}
+.gm-find-toggle {
+	font-family: var(--font-mono);
+	font-size: 11.5px;
+	height: 22px;
+	min-width: 24px;
+}
+.gm-find-toggle:hover,
+.gm-find-btn:hover,
+.gm-find-text:hover {
+	background: var(--accent-soft);
 	color: var(--ink);
 }
-.gm-editor .cm-panels input,
-.gm-editor .cm-panels button {
-	font-size: 13px;
+.gm-find-toggle[aria-pressed="true"],
+.gm-find-btn.gm-find-on {
+	background: var(--accent-soft);
+	color: var(--accent);
+}
+.gm-find-text {
+	padding: 0 10px;
+	border: 1px solid var(--line);
+	margin-left: 2px;
+	color: var(--ink);
 }
 .gm-editor .cm-searchMatch {
-	background: color-mix(in srgb, var(--accent) 25%, transparent);
+	background: color-mix(in srgb, #e8b339 35%, transparent);
+	border-radius: 2px;
+}
+.gm-editor .cm-searchMatch-selected {
+	background: color-mix(in srgb, #e8b339 75%, transparent);
+	box-shadow: 0 0 0 1px color-mix(in srgb, #c98a12 70%, transparent);
 }

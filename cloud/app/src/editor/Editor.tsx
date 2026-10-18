@@ -11,6 +11,7 @@ import { EditorView, drawSelection, keymap, placeholder } from "@codemirror/view
 import { tags as t } from "@lezer/highlight";
 import { useEffect, useRef } from "react";
 import { linkClicks, livePreview } from "./livePreview";
+import { searchPanel } from "./searchPanel";
 
 export interface EditorProps {
 	value: string;
@@ -78,8 +79,8 @@ export function Editor(p: EditorProps) {
 			markdown({ base: markdownLanguage, addKeymap: true }),
 			syntaxHighlighting(highlight),
 			livePreview,
-			search({ top: true }),
-			highlightSelectionMatches(),
+			search({ top: true, createPanel: searchPanel }),
+			highlightSelectionMatches({ minSelectionLength: 3 }),
 			autocompletion({ override: [wikiCompletion(() => props.current.titles())], icons: false }),
 			placeholder("Start writing… Use [[ to link a note, - [decision] for a fact, #tag to tag it."),
 			keymap.of([

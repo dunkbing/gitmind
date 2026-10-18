@@ -4,6 +4,7 @@
 
 import { ArrowUpRight, Check, Copy, FolderInput, Link2, Lock, MoreHorizontal, PanelRight, Pin, PinOff, Trash2, X } from "lucide-react";
 import { type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { openSearchPanel } from "@codemirror/search";
 import type { EditorView } from "@codemirror/view";
 import { format, links, normalizeTags, parse, type Note } from "../../../src/engine/notes";
 import { ApiError, type NoteData, type Workspace, api } from "../api";
@@ -165,6 +166,19 @@ function NoteEditor({ ws, initial, onMoved }: { ws: Workspace; initial: NoteData
 			if (timer.current) save();
 		};
 	}, [save]);
+
+	// ⌘F finds in the note even when the cursor isn't in the editor.
+	useEffect(() => {
+		const onKey = (e: globalThis.KeyboardEvent) => {
+			const v = editorView.current;
+			if (!v || !(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== "f" || e.altKey || e.shiftKey) return;
+			if (v.hasFocus) return; // the editor's own keymap handles it
+			e.preventDefault();
+			openSearchPanel(v);
+		};
+		addEventListener("keydown", onKey);
+		return () => removeEventListener("keydown", onKey);
+	}, []);
 
 	const onBody = (b: string) => {
 		setBody(b);
