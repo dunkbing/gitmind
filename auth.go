@@ -104,13 +104,14 @@ func login(ctx context.Context) (github.Credentials, error) {
 // repository, creating it (private) when it doesn't exist yet.
 func setupCmd(ctx context.Context, dir string, args []string) error {
 	fs := flag.NewFlagSet("setup", flag.ExitOnError)
-	name := fs.String("repo", "gitmind-notes", "notes repository: NAME under your account, or OWNER/NAME")
-	public := fs.Bool("public", false, "create the repository as public (default private)")
-	cloudURL := fs.String("cloud", "", "sync with a gitmind cloud server at this URL instead of GitHub")
-	workspace := fs.String("workspace", "", "cloud workspace to sync (default: your personal one)")
+	server := fs.String("server", defaultServer(), "gitmind server to sync with; set it for a self-hosted server")
+	workspace := fs.String("workspace", "", "workspace to sync (default: your personal one)")
+	useGitHub := fs.Bool("github", false, "sync with a repository on your GitHub account instead of a gitmind server")
+	name := fs.String("repo", "gitmind-notes", "with --github: NAME under your account, or OWNER/NAME")
+	public := fs.Bool("public", false, "with --github: create the repository as public (default private)")
 	fs.Parse(args)
-	if *cloudURL != "" {
-		return cloudSetup(ctx, dir, *cloudURL, *workspace)
+	if !*useGitHub {
+		return cloudSetup(ctx, dir, *server, *workspace)
 	}
 
 	creds, err := github.LoadCredentials()
@@ -220,6 +221,15 @@ func visibility(private bool) string {
 		return "private"
 	}
 	return "public"
+}
+
+// defaultServer is gitmind.app, unless GITMIND_SERVER names another (e.g. a
+// self-hosted) server.
+func defaultServer() string {
+	if s := os.Getenv("GITMIND_SERVER"); s != "" {
+		return s
+	}
+	return "https://gitmind.app"
 }
 
 // cloudSetup signs in to a gitmind cloud server and makes dir a synced

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # End-to-end: the real Worker (wrangler dev), a local git server standing in
-# for Artifacts, and the real gitmind CLI connecting with `setup --cloud`.
+# for Artifacts, and the real gitmind CLI connecting with `setup --server`.
 # Run on the host; the server side runs in the dev container (host network).
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -21,7 +21,7 @@ echo "== worker up"
 
 export GITMIND_CLOUD_CREDENTIALS=$WORK/cloud.json GITMIND_CREDENTIALS=$WORK/github.json
 mkfifo "$WORK/in"; exec 3<>"$WORK/in"
-$CLI --dir "$WORK/notes" setup --cloud $BASE <&3 >"$WORK/setup.log" 2>&1 &
+$CLI --dir "$WORK/notes" setup --server $BASE <&3 >"$WORK/setup.log" 2>&1 &
 CLI_PID=$!
 for i in $(seq 1 30); do grep -q "/authorize?" "$WORK/setup.log" && break; sleep 0.5; done
 URL=$(grep -o "$BASE/authorize?[^ ]*" "$WORK/setup.log")

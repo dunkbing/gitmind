@@ -53,7 +53,7 @@ func Load() (*Credentials, error) {
 	}
 	data, err := os.ReadFile(p)
 	if errors.Is(err, os.ErrNotExist) {
-		return nil, errors.New("not connected to a gitmind cloud; run `gitmind setup --cloud URL`")
+		return nil, errors.New("not connected to a gitmind cloud; run `gitmind setup`")
 	} else if err != nil {
 		return nil, err
 	}
@@ -255,7 +255,7 @@ func (c *Credentials) Fresh(ctx context.Context) error {
 		return nil
 	}
 	if c.RefreshToken == "" {
-		return errors.New("the cloud login expired; run `gitmind setup --cloud` again")
+		return errors.New("the cloud login expired; run `gitmind setup` again")
 	}
 	t, err := postToken(ctx, c.URL, url.Values{
 		"grant_type":    {"refresh_token"},
@@ -264,7 +264,7 @@ func (c *Credentials) Fresh(ctx context.Context) error {
 		"resource":      {c.URL + "/mcp"},
 	})
 	if err != nil {
-		return fmt.Errorf("the cloud login expired (%v); run `gitmind setup --cloud` again", err)
+		return fmt.Errorf("the cloud login expired (%v); run `gitmind setup` again", err)
 	}
 	c.setToken(t)
 	return c.Save()
@@ -321,7 +321,7 @@ func (c *Credentials) api(ctx context.Context, method, path string, out any) err
 		}
 		json.Unmarshal(data, &e)
 		if resp.StatusCode == http.StatusUnauthorized {
-			return errors.New("the cloud rejected the saved login; run `gitmind setup --cloud` again")
+			return errors.New("the cloud rejected the saved login; run `gitmind setup` again")
 		}
 		return fmt.Errorf("%s %s: %s %s", method, path, resp.Status, e.Error)
 	}

@@ -39,6 +39,10 @@ const STATE = "mg_login";
 const day = (ms: number) => new Date(ms).toISOString().slice(0, 10);
 const enc = (path: string) => path.split("/").map(encodeURIComponent).join("/");
 const noteHref = (ws: Workspace, path: string) => `/w/${ws.slug}/n/${enc(path)}`;
+// setupCommand is the CLI command that connects a laptop to this server:
+// plain `gitmind setup` for gitmind.app, with --server elsewhere.
+const setupCommand = (env: Env, workspace?: string) =>
+	"gitmind setup" + (env.PUBLIC_URL.replace(/\/+$/, "") === "https://gitmind.app" ? "" : ` --server ${env.PUBLIC_URL}`) + (workspace ? ` --workspace ${workspace}` : "");
 const errMessage = (e: unknown) => (e instanceof Error ? e.message : String(e)).replace(/^Error: /, "");
 
 // Same-origin check for every form post, on top of SameSite cookies.
@@ -231,7 +235,7 @@ web.get("/authorize", async (c) => {
 			{ title: `Authorize ${details.clientName}`, user },
 			`<div class="hero card"><h1>Allow ${escape(details.clientName)} to use your memory?</h1>
 			<p>${origin} Access goes to <strong>${escape(details.redirectHost)}</strong>.</p>
-			${details.redirectIsLoopback ? "<p><strong>This sends access to an app on your computer.</strong> Continue only if you just started signing in from it, e.g. with <code>gitmind setup --cloud</code>.</p>" : ""}
+			${details.redirectIsLoopback ? "<p><strong>This sends access to an app on your computer.</strong> Continue only if you just started signing in from it, e.g. with <code>gitmind setup</code>.</p>" : ""}
 			<p>It will be able to read, search and change the notes in every workspace you belong to, as <strong>${escape(user.login)}</strong>.</p>
 			<form method="post"><input type="hidden" name="handle" value="${escape(consent.handle)}">
 			<div class="row"><button name="decision" value="approve">Allow</button><button class="plain" name="decision" value="deny">Deny</button></div></form></div>`,
@@ -308,7 +312,7 @@ web.get("/connect", async (c) => {
 		<h3>Codex</h3><pre class="box">[mcp_servers.gitmind]\nurl = "${escape(mcp)}"</pre><p>in <code>~/.codex/config.toml</code>, then <code>codex mcp login gitmind</code>.</p>
 		<h3>Local, offline-capable sync on your laptops</h3>
 		<p>The <a href="https://github.com/dunkbing/gitmind">gitmind CLI</a> keeps a git clone of a workspace on your machine and serves it to local agents, syncing with this server:</p>
-		<pre class="box">go install github.com/dunkbing/gitmind@latest\ngitmind setup --cloud ${escape(c.env.PUBLIC_URL)}</pre>
+		<pre class="box">go install github.com/dunkbing/gitmind@latest\n${escape(setupCommand(c.env))}</pre>
 		<h3>Plain git</h3><p>Each workspace is a git repository. Its settings page shows how to clone it.</p>`,
 	);
 });
@@ -686,7 +690,7 @@ async function settingsPage(c: C, ctx: { user: User; ws: Workspace; all: Workspa
 		${manage ? `<form method="post" action="/w/${ws.slug}/invites" class="row" style="margin-top:12px"><select name="role"><option value="member">member</option><option value="admin">admin</option></select><button>Create invite link</button></form><p class="muted">Links work once and expire after 7 days.</p>` : ""}` : `<h2>Teams</h2><p>Share a memory with other people and their agents in a team workspace.</p>`}
 		<h2>New team workspace</h2><form method="post" action="/teams" class="row"><input type="text" name="name" placeholder="Team name" required><button>Create team</button></form>
 		</div><div><h2>Your data</h2><p><a class="btn plain" href="/w/${ws.slug}/export.zip">Download all notes (zip)</a></p>
-		<p class="muted">Clone it with git: run <code>gitmind setup --cloud ${escape(c.env.PUBLIC_URL)} --workspace ${escape(ws.slug)}</code>, which keeps a synced clone in <code>~/.gitmind</code>.</p></div></div>`,
+		<p class="muted">Clone it with git: run <code>${escape(setupCommand(c.env, ws.kind === "team" ? ws.slug : undefined))}</code>, which keeps a synced clone in <code>~/.gitmind</code>.</p></div></div>`,
 	);
 }
 

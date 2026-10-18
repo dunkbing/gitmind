@@ -40,4 +40,5 @@ GITHUB_CLIENT_ID=... GITHUB_CLIENT_SECRET=... ./scripts/deploy.sh
 
 ## Laptops
 
-Point the CLI at your server: `gitmind setup --cloud https://YOUR-DOMAIN`.
+Point the CLI at your server: `gitmind setup --server https://YOUR-DOMAIN`,
+or set `GITMIND_SERVER=https://YOUR-DOMAIN` once in your shell profile.

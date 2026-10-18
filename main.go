@@ -38,15 +38,18 @@ Usage:
   gitmind [--dir DIR] [--sync-interval 3m] [command] [args]
 
 Commands:
-  setup              log in to GitHub if needed, then connect the notes
-                     directory to your notes repo, creating it if missing
-                       --repo NAME     NAME or OWNER/NAME (default gitmind-notes)
-                       --public        create it public (default private)
-                       --cloud URL     use a gitmind cloud server instead of
-                                       GitHub (signs in through your browser)
-                       --workspace S   cloud workspace (default: personal)
+  setup              sign in through your browser and sync the notes directory
+                     with your workspace on gitmind.app
+                       --server URL    a self-hosted gitmind server instead
+                                       (or set GITMIND_SERVER)
+                       --workspace S   a team workspace (default: personal)
+                       --github        sync with a private repository on your
+                                       GitHub account instead of a server
+                       --repo NAME     with --github: NAME or OWNER/NAME
+                                       (default gitmind-notes)
+                       --public        with --github: create it public
   auth login|status|logout
-                     manage the GitHub login (opens your browser)
+                     manage the GitHub login used by setup --github
   serve              run the MCP server on stdio (default)
   context            print memory for the current project, for a SessionStart
                      hook (reads the hook's JSON from stdin when piped)

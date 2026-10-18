@@ -30,4 +30,4 @@ signs in with GitHub and joins.
 ## Using a team from an agent
 
 Agents pass the team's slug as `workspace` to any tool. With the CLI, run
-`gitmind setup --cloud https://gitmind.app --workspace SLUG`.
+`gitmind setup --workspace SLUG`.

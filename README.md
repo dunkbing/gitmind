@@ -23,8 +23,8 @@ Claude Code / Codex ──stdio──▶ gitmind
 [`cloud/`](cloud/README.md) is a hosted version you can self-host on
 Cloudflare (AGPL-3.0): the same memory over a remote MCP endpoint for
 claude.ai, ChatGPT and mobile apps, a web app, chat-history import and team
-workspaces. Laptops sync with it through this CLI:
-`gitmind setup --cloud https://YOUR-DOMAIN`.
+workspaces. Laptops sync with it through this CLI: `gitmind setup`, or
+`gitmind setup --server https://YOUR-DOMAIN` for a self-hosted server.
 
 ## Install
 
@@ -33,20 +33,18 @@ go install github.com/dunkbing/gitmind@latest
 gitmind setup
 ```
 
-`setup` logs you in to GitHub (it copies a one-time code and opens
-github.com/login/device in your browser; over SSH it prints the link to open on
-any device), then connects `~/.gitmind` to your `gitmind-notes` repository,
-creating it as a private repository if it doesn't exist yet. Run the same
-command on every machine. `--repo NAME` or `--repo OWNER/NAME` picks another
-repository.
+`setup` signs you in to [gitmind.app](https://gitmind.app) through your
+browser (over SSH it prints the link, and you paste back the address your
+browser ends up on), then clones your personal workspace into `~/.gitmind`.
+Run the same command on every machine. Git authentication is handled by
+gitmind itself, registered as git's credential helper for that repository only.
 
-gitmind handles git authentication for the notes repository itself (it's
-registered as git's credential helper for that repository only), so pushes
-work without `gh` or SSH keys. `gitmind auth status|logout` manages the login,
-saved in your user config directory, readable only by you.
-
-Prefer your own git setup? `gitmind init <git-url>` clones any remote and
-uses your existing git credentials instead.
+- `--workspace SLUG`: a team workspace.
+- `--server URL` (or `GITMIND_SERVER`): a [self-hosted](cloud/README.md) server.
+- `--github`: no server; sync with a private `gitmind-notes` repository on your
+  GitHub account (`--repo NAME` or `OWNER/NAME` picks another, and
+  `gitmind auth status|logout` manages that login).
+- `gitmind init <git-url>`: any git remote, with your existing git credentials.
 
 ### Claude Code
 

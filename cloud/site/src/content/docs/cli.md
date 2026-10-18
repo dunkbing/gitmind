@@ -14,15 +14,19 @@ background.
 
 ```bash
 go install github.com/dunkbing/gitmind@latest
-gitmind setup --cloud https://gitmind.app
+gitmind setup
 ```
 
-`setup` opens your browser to sign in, then clones your personal workspace.
-Over SSH it prints the link; after approving, paste the address your browser
-ends up on back into the terminal. Use `--workspace SLUG` for a team.
+`setup` opens your browser to sign in to gitmind.app, then clones your
+personal workspace. Over SSH it prints the link; after approving, paste the
+address your browser ends up on back into the terminal.
 
-Prefer GitHub as the remote? `gitmind setup` alone connects a private
-`gitmind-notes` repository on your GitHub account instead.
+- `--workspace SLUG` syncs a team workspace instead.
+- `--server https://your-domain` connects to a [self-hosted](/docs/self-hosting/)
+  server (or set `GITMIND_SERVER`).
+- `--github` skips the server and syncs with a private `gitmind-notes`
+  repository on your GitHub account. Your notes then never leave GitHub, but
+  apps like claude.ai and ChatGPT can't reach them.
 
 ## Add it to your agents
 
