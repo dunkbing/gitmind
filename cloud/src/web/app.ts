@@ -288,7 +288,8 @@ web.get("/w/:slug/export.zip", async (c) => {
 const appShell = async (c: C) => {
 	const user = requireUser(c);
 	if (user instanceof Response) return user;
-	const built = c.env.ASSETS ? await c.env.ASSETS.fetch(new URL("/_app/index.html", c.req.url)) : null;
+	// "/_app/", not "/_app/index.html", which the asset server redirects.
+	const built = c.env.ASSETS ? await c.env.ASSETS.fetch(new URL("/_app/", c.req.url)) : null;
 	const html = built?.ok ? await built.text() : `<!doctype html><html><head><meta charset="utf-8"><title>gitmind</title></head><body><div id="root"></div></body></html>`;
 	return new Response(html, {
 		headers: {

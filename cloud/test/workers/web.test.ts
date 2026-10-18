@@ -32,7 +32,10 @@ describe("web app", () => {
 		expect((await dee.fetch("/app")).headers.get("Location")).toBe("/w/dee");
 		for (const page of ["/w/dee", "/w/dee/n/ops/x.md", "/w/dee/graph", "/connect"]) {
 			const res = await dee.fetch(page);
-			expect(await html(res)).toContain('<div id="root">');
+			const body = await html(res);
+			expect(body).toContain('<div id="root">');
+			// The shell loads the built app (run `bun run build` first).
+			expect(body).toContain("/_app/assets/");
 			expect(res.headers.get("Content-Security-Policy")).toContain("script-src 'self'");
 		}
 	});
