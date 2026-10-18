@@ -31,7 +31,8 @@ type App struct {
 	Repo  *gitsync.Repo
 	Log   *log.Logger
 
-	host string
+	host   string
+	client string // the MCP client (agent) using this server, if known
 
 	mu          sync.Mutex
 	pushTimer   *time.Timer
@@ -517,8 +518,26 @@ func (a *App) save(ctx context.Context, n notes.Note, verb string) error {
 	return nil
 }
 
+// message is a commit message that says which machine, and which agent
+// when known, made the change: "memory: add x.md (laptop, claude-code)".
+// gitmind cloud reads it to show where a change in its inbox came from.
 func (a *App) message(verb, what string) string {
+	a.mu.Lock()
+	client := a.client
+	a.mu.Unlock()
+	if client != "" {
+		return fmt.Sprintf("memory: %s %s (%s, %s)", verb, what, a.host, client)
+	}
 	return fmt.Sprintf("memory: %s %s (%s)", verb, what, a.host)
+}
+
+// SetClient records the agent using this server (its MCP client name), for
+// commit messages.
+func (a *App) SetClient(name string) {
+	name = strings.NewReplacer("(", "", ")", "", ",", "", "\n", " ").Replace(strings.TrimSpace(name))
+	a.mu.Lock()
+	a.client = name
+	a.mu.Unlock()
 }
 
 func (a *App) schedulePush() {

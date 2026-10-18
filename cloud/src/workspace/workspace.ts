@@ -22,12 +22,27 @@ import { ConflictError, type FileChange, Session } from "../repo/git";
 import { remoteFor, repoProvider } from "../repo/provider";
 import { buildContext, sessionContext } from "./context";
 import { type Embedder, embedderFor } from "./embed";
-import { type Hit, type Query, Store } from "./store";
+import { type Hit, type InboxItem, type Query, Store } from "./store";
 
 export interface Actor {
 	login: string;
 	name?: string;
+	// Where the change comes from, for commit messages and the inbox: an AI
+	// app's name (e.g. "claude.ai"), or "web" for the web app.
+	source?: string;
+	// An AI app acting for the user: its changes go to the inbox for review.
+	agent?: boolean;
 }
+
+export interface ReviewSettings {
+	enabled: boolean; // agents' changes go to the inbox
+	trusted: string[]; // sources whose changes skip it
+}
+
+// How a write affects the inbox: an agent's change is recorded for review;
+// the user's own change to a note counts as reviewing it; a move keeps any
+// pending review (moved with the note).
+type InboxEffect = "record" | "resolve" | "keep";
 
 export interface WriteArgs {
 	title: string;
@@ -52,6 +67,9 @@ export interface WriteResult {
 	created: boolean;
 	similar: Hit[];
 }
+
+// The note that collects reasons for rejected changes.
+const FEEDBACK = "general/memory-feedback.md";
 
 // Files every workspace repository starts with, matching the CLI's init.
 const INIT_FILES: FileChange[] = [
@@ -312,7 +330,7 @@ export class Workspace extends DurableObject<Env> {
 			const content = this.store.read(from)!.content;
 			const changes: FileChange[] = to === from ? [] : [{ path: from, content: null }, { path: to, content }];
 			return { changes, message: `move ${from} -> ${to}`, result: { from, to, oldTitle: n.title, title, sources: this.store.backlinks(from).map((h) => h.path) } };
-		});
+		}, "keep");
 
 		const { from, to, oldTitle, title, sources } = plan;
 		const oldFileSlug = slugify(from.slice(from.lastIndexOf("/") + 1).replace(/\.md$/, ""));
@@ -344,8 +362,77 @@ export class Workspace extends DurableObject<Env> {
 				touched.push(path);
 			}
 			return { changes, message: `relink ${to}`, result: touched };
-		});
+		}, "keep");
+		// A pending review follows the note to its new path.
+		this.store.moveInbox(from, to, this.store.read(to)?.content ?? null);
 		return { path: to, updated };
+	}
+
+	// ---- the inbox -------------------------------------------------------------
+
+	reviewSettings(): ReviewSettings {
+		try {
+			return { enabled: true, trusted: [], ...JSON.parse(this.store.meta("review") ?? "{}") };
+		} catch {
+			return { enabled: true, trusted: [] };
+		}
+	}
+
+	private reviewing(source: string): boolean {
+		const r = this.reviewSettings();
+		const known = new Set(JSON.parse(this.store.meta("review_sources") ?? "[]") as string[]);
+		if (!known.has(source)) this.store.setMeta("review_sources", JSON.stringify([...known, source].sort()));
+		return r.enabled && !r.trusted.includes(source);
+	}
+
+	async inbox(): Promise<{ items: InboxItem[]; settings: ReviewSettings; sources: string[] }> {
+		await this.fresh();
+		return { items: this.store.inbox(), settings: this.reviewSettings(), sources: JSON.parse(this.store.meta("review_sources") ?? "[]") };
+	}
+
+	async inboxCount(): Promise<number> {
+		return this.store.inboxCount();
+	}
+
+	async setReviewSettings(settings: ReviewSettings): Promise<ReviewSettings> {
+		const clean = { enabled: !!settings.enabled, trusted: [...new Set((settings.trusted ?? []).map(String))] };
+		this.store.setMeta("review", JSON.stringify(clean));
+		// Changes from apps that are now trusted don't need review either.
+		for (const source of clean.trusted) this.store.resolveInbox({ source });
+		if (!clean.enabled) this.store.resolveInbox({});
+		return clean;
+	}
+
+	// accept keeps the change(s) as they are: just clears the review.
+	async accept(ids: number[] | "all"): Promise<void> {
+		if (ids === "all") this.store.resolveInbox({});
+		else for (const id of ids) this.store.resolveInbox({ id });
+	}
+
+	// reject undoes an agent's change: the note goes back to how it was
+	// before (or away, if the agent created it). An optional reason is added
+	// to a pinned "Memory feedback" note, which agents see at the start of
+	// every session, so they stop saving that kind of thing.
+	async reject(id: number, actor: Actor, reason?: string): Promise<{ path: string }> {
+		const item = this.store.inboxItem(id);
+		if (!item) throw new Error("that change was already reviewed");
+		await this.mutate(actor, () => {
+			const current = this.store.read(item.path)?.content ?? null;
+			if (current !== item.after) throw new Error(`${item.path} changed again since; open it and edit it instead`);
+			if (item.before === null && current === null) return { changes: [], message: "", result: null };
+			return { changes: [{ path: item.path, content: item.before }], message: `revert ${item.path} (rejected in review)`, result: null };
+		});
+		this.store.resolveInbox({ id });
+		const why = reason?.trim();
+		if (why) {
+			const line = `- [instruction] Don't save: ${why.replace(/\s+/g, " ")} (rejected ${new Date().toISOString().slice(0, 10)}, ${item.path})`;
+			try {
+				await this.edit({ identifier: FEEDBACK, operation: "append", content: line }, actor);
+			} catch {
+				await this.write({ title: "Memory feedback", directory: "general", pinned: true, content: "What not to save, from reviewing what AI apps wrote.\n\n" + line }, actor);
+			}
+		}
+		return { path: item.path };
 	}
 
 	// put saves a note's whole file as a person edited it in the web app.
@@ -460,15 +547,27 @@ export class Workspace extends DurableObject<Env> {
 		const notes = [...s.blobs].filter(([p]) => p.endsWith(".md") && !p.split("/").some((seg) => seg.startsWith(".")));
 		const contents = new Map<string, string>();
 		for (const [path, oid] of notes) if (known.get(path) !== oid) contents.set(path, (await s.read(path)) ?? "");
+		// Changes an agent pushed from a laptop (the CLI's commits) go to the
+		// inbox like changes made here. The head commit tells where they came
+		// from; the user's own edits and syncs don't start with "memory:".
+		const pushed = initial ? null : pushSource(s.headMessage);
+		const record = pushed !== null && this.reviewing(pushed);
+		const now = Date.now();
 		this.ctx.storage.transactionSync(() => {
+			const present = new Set(notes.map(([p]) => p));
 			for (const [path, oid] of notes) {
 				const content = contents.get(path);
 				if (content === undefined) continue;
 				const created = Date.parse(parse(path, content).created ?? "");
+				const before = record ? (this.store.read(path)?.content ?? null) : null;
 				this.store.upsert(path, content, oid, initial && created ? created : s.headTime || Date.now());
+				if (record) this.store.recordChange(path, before, content, pushed!, s.headAuthor, now);
 			}
-			const present = new Set(notes.map(([p]) => p));
-			for (const path of known.keys()) if (!present.has(path)) this.store.remove(path);
+			for (const path of known.keys()) {
+				if (present.has(path)) continue;
+				if (record) this.store.recordChange(path, this.store.read(path)?.content ?? null, null, pushed!, s.headAuthor, now);
+				this.store.remove(path);
+			}
 			this.store.setMeta("head", s.head ?? "");
 		});
 		await this.embedLater();
@@ -477,7 +576,7 @@ export class Workspace extends DurableObject<Env> {
 	// mutate computes a change from the current notes, commits and pushes it,
 	// then updates the index. When a laptop pushed in between, it re-reads
 	// and recomputes the change on top, so edits are replayed, never lost.
-	private mutate<T>(actor: Actor, fn: () => { changes: FileChange[]; message: string; result: T }): Promise<T> {
+	private mutate<T>(actor: Actor, fn: () => { changes: FileChange[]; message: string; result: T }, inbox: InboxEffect = actor.agent ? "record" : "resolve"): Promise<T> {
 		return this.serialize(async () => {
 			for (let attempt = 0; attempt < 5; attempt++) {
 				let s = this.session;
@@ -491,7 +590,10 @@ export class Workspace extends DurableObject<Env> {
 				const { changes, message, result } = fn();
 				if (changes.length === 0) return result;
 				try {
-					await s!.commit(changes, `memory: ${message} (cloud, ${actor.login})`, {
+					// "(cloud, login)" for the user's own changes in the web app,
+					// "(cloud, login, app)" for an AI app's.
+					const via = actor.agent && actor.source ? `, ${actor.source}` : "";
+					await s!.commit(changes, `memory: ${message} (cloud, ${actor.login}${via})`, {
 						name: actor.name || actor.login,
 						email: `${actor.login}@users.gitmind`,
 					});
@@ -500,11 +602,16 @@ export class Workspace extends DurableObject<Env> {
 					throw e;
 				}
 				const now = Date.now();
+				const notes = changes.filter((c) => c.path.endsWith(".md"));
+				const before = new Map(notes.map((c) => [c.path, this.store.read(c.path)?.content ?? null]));
+				const source = actor.source ?? "an AI app";
+				const record = inbox === "record" && this.reviewing(source);
 				this.ctx.storage.transactionSync(() => {
-					for (const c of changes) {
-						if (!c.path.endsWith(".md")) continue;
+					for (const c of notes) {
 						if (c.content === null) this.store.remove(c.path);
 						else this.store.upsert(c.path, c.content, s!.blobs.get(c.path)!, now);
+						if (record) this.store.recordChange(c.path, before.get(c.path)!, c.content, source, actor.login, now);
+						else if (inbox === "resolve") this.store.resolveInbox({ path: c.path });
 					}
 					this.store.setMeta("head", s!.head ?? "");
 				});
@@ -515,6 +622,19 @@ export class Workspace extends DurableObject<Env> {
 			throw new Error("too many concurrent changes to this workspace; try again");
 		});
 	}
+}
+
+// pushSource tells where a pushed commit came from, from the CLI's message
+// format "memory: add x.md (laptop, Claude Code)" (or "(laptop)" from older
+// CLIs); null for commits that aren't an agent's change (the user's edits,
+// syncs, and the cloud's own commits).
+export function pushSource(message: string): string | null {
+	if (!message.startsWith("memory:")) return null;
+	const m = /\(([^()]*)\)\s*$/.exec(message.split("\n")[0]);
+	if (!m) return "a laptop";
+	const [host, client] = m[1].split(",").map((x) => x.trim());
+	if (host === "cloud" || host === "web") return null;
+	return client ? `${client} on ${host}` : `the CLI on ${host}`;
 }
 
 function lockedError(path: string): Error {

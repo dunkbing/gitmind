@@ -31,6 +31,7 @@ export type Route =
 	| { view: "search"; slug: string }
 	| { view: "graph"; slug: string }
 	| { view: "history"; slug: string }
+	| { view: "inbox"; slug: string }
 	| { view: "import"; slug: string }
 	| { view: "settings"; slug: string }
 	| { view: "connect"; slug?: string }
@@ -44,7 +45,7 @@ export function parseRoute(url: URL): Route {
 	const rest = m[2] ?? "";
 	if (rest === "") return { view: "home", slug };
 	if (rest.startsWith("n/")) return { view: "note", slug, path: rest.slice(2).split("/").map(decodeURIComponent).join("/") };
-	if (["search", "graph", "history", "import", "settings"].includes(rest)) return { view: rest as "search", slug };
+	if (["search", "graph", "history", "import", "settings", "inbox"].includes(rest)) return { view: rest as "search", slug };
 	return { view: "unknown" };
 }
 

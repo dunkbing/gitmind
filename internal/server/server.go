@@ -114,7 +114,15 @@ func New(app *memory.App, version string, opts ...Option) *mcp.Server {
 	for _, opt := range opts {
 		opt(&o)
 	}
-	s := mcp.NewServer(&mcp.Implementation{Name: "gitmind", Version: version}, &mcp.ServerOptions{Instructions: instructions})
+	s := mcp.NewServer(&mcp.Implementation{Name: "gitmind", Version: version}, &mcp.ServerOptions{
+		Instructions: instructions,
+		// Remember which agent connected, so commits say who made a change.
+		InitializedHandler: func(_ context.Context, req *mcp.InitializedRequest) {
+			if p := req.Session.InitializeParams(); p != nil && p.ClientInfo != nil {
+				app.SetClient(p.ClientInfo.Name)
+			}
+		},
+	})
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "search_notes",

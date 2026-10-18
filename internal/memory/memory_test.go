@@ -173,3 +173,18 @@ func (a *App) mustRead(t *testing.T, rel, appendLine string) notes.Note {
 	n.Body += appendLine + "\n"
 	return n
 }
+
+func TestCommitsNameTheAgent(t *testing.T) {
+	a := machine(t, "", "laptop")
+	a.SetClient("claude-code")
+	if _, _, err := a.Write(context.Background(), "Deploy", "ops", "- run deploy.sh", nil, false); err != nil {
+		t.Fatal(err)
+	}
+	out, err := exec.Command("git", "-C", a.Store.Root, "log", "-1", "--format=%s").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.TrimSpace(string(out)); got != "memory: add ops/deploy.md (laptop, claude-code)" {
+		t.Errorf("commit message = %q", got)
+	}
+}

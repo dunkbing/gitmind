@@ -21,6 +21,12 @@ that your laptops' gitmind CLI syncs with.
   background after each change; vectors live in the workspace's SQLite next to the FTS index (no
   separate vector database) and search merges both rankings (reciprocal rank
   fusion). Related notes in the app come from the same vectors.
+- **Review**: every change an AI app makes (over MCP, or pushed by the CLI's
+  agents) lands in an inbox with its provenance (the OAuth client's name, or
+  the CLI's agent and machine from its commit message). Accepting clears it;
+  rejecting undoes it, and an optional reason goes to a pinned "Memory
+  feedback" note that agents read at session start. The inbox lives in the
+  workspace's Durable Object, outside the rebuildable index.
 - **Import** Claude and ChatGPT data exports, or a zip of Markdown notes.
 - **Teams**: shared workspaces with invite links and owner/admin/member roles.
 - **Your data is git**: every workspace is a git repository (on Cloudflare

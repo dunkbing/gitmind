@@ -11,6 +11,9 @@ import type { Hit, Query } from "./workspace/store";
 
 export interface AuthProps {
 	userId: string;
+	// The app the user connected (its OAuth client name), for provenance.
+	// Logins from before it was recorded don't have it.
+	client?: string;
 }
 
 const INSTRUCTIONS = `Persistent memory shared across the user's machines and AI apps, stored as Markdown notes in a git repository.
@@ -48,7 +51,7 @@ function createServer(version: string): McpServer {
 		if (!user) throw new Error("account not found");
 		const ws = await workspaceFor(env, user.id, slug);
 		if (!ws) throw new Error(slug ? `no workspace "${slug}" (see list_workspaces)` : "no workspace");
-		return { user, ws, stub: workspaceStub(env, ws), actor: actorOf(user) };
+		return { user, ws, stub: workspaceStub(env, ws), actor: { ...actorOf(user), source: props.client || "an AI app", agent: true } };
 	};
 	const env = () => workerEnv as Env;
 

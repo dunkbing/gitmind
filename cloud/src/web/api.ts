@@ -149,6 +149,42 @@ appApi.get("/w/:slug/related", async (c) => {
 	return c.json(await workspaceStub(c.env, ws).related(c.req.query("path") ?? "", Math.min(20, Number(c.req.query("limit")) || 6)));
 });
 
+// ---- the inbox: changes AI apps made, for review ---------------------------
+
+appApi.get("/w/:slug/inbox/count", async (c) => {
+	const ws = await workspace(c);
+	if (!ws) return noWorkspace(c);
+	return c.json({ count: await workspaceStub(c.env, ws).inboxCount() });
+});
+
+appApi.get("/w/:slug/inbox", async (c) => {
+	const ws = await workspace(c);
+	if (!ws) return noWorkspace(c);
+	return c.json(await workspaceStub(c.env, ws).inbox());
+});
+
+appApi.post("/w/:slug/inbox/accept", async (c) => {
+	const ws = await workspace(c);
+	if (!ws) return noWorkspace(c);
+	const b = await c.req.json<{ ids?: number[]; all?: boolean }>();
+	await workspaceStub(c.env, ws).accept(b.all ? "all" : (b.ids ?? []).map(Number));
+	return c.json({ ok: true });
+});
+
+appApi.post("/w/:slug/inbox/:id/reject", async (c) => {
+	const ws = await workspace(c);
+	if (!ws) return noWorkspace(c);
+	const b = await c.req.json<{ reason?: string }>().catch(() => ({ reason: undefined }));
+	return c.json(await workspaceStub(c.env, ws).reject(Number(c.req.param("id")), actorOf(c.get("user")), b.reason));
+});
+
+appApi.put("/w/:slug/review", async (c) => {
+	const ws = await workspace(c);
+	if (!ws) return noWorkspace(c);
+	const b = await c.req.json<{ enabled: boolean; trusted: string[] }>();
+	return c.json(await workspaceStub(c.env, ws).setReviewSettings(b));
+});
+
 appApi.get("/w/:slug/graph", async (c) => {
 	const ws = await workspace(c);
 	if (!ws) return noWorkspace(c);

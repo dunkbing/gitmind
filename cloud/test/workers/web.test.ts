@@ -173,7 +173,7 @@ describe("web app", () => {
 		expect((await tool(hanaToken, "search_notes", { query: "rotation", workspace: "acme-platform" })).text).toContain("ops/on-call.md");
 		expect((await tool(hanaToken, "search_notes", { query: "rotation" })).text).toBe("No notes match.");
 		const history = (await call(hana, "GET", "/w/acme-platform/history")).data;
-		expect(history.some((c: { message: string }) => c.message.includes("(cloud, ivan)"))).toBe(true);
+		expect(history.some((c: { message: string }) => c.message.includes("(cloud, ivan, Test MCP client)"))).toBe(true);
 		const settings = (await call(hana, "GET", "/w/acme-platform/settings")).data;
 		expect(settings.members.map((m: { login: string }) => m.login)).toEqual(["hana", "ivan"]);
 

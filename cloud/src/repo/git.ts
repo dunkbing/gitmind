@@ -42,6 +42,9 @@ export class Session {
 		public blobs: Map<string, string>,
 		// When head was committed, in ms since epoch.
 		public headTime = 0,
+		// Head's message and author, to tell where pushed changes came from.
+		public headMessage = "",
+		public headAuthor = "",
 	) {}
 
 	static async open(remote: Remote): Promise<Session> {
@@ -60,6 +63,8 @@ export class Session {
 			s.head = tip;
 			const { commit } = await git.readCommit({ fs, dir: DIR, oid: tip });
 			s.headTime = commit.committer.timestamp * 1000;
+			s.headMessage = commit.message.trim();
+			s.headAuthor = commit.author.name;
 			for (const [path, oid] of await listTree(fs, tip)) s.blobs.set(path, oid);
 		}
 		return s;

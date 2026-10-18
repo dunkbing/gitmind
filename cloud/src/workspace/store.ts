@@ -80,6 +80,32 @@ export interface Query {
 	mode?: "hybrid" | "keyword" | "semantic";
 }
 
+// A change an AI app made, waiting for the user's review. One per note:
+// later changes to the same note extend it.
+export interface InboxItem {
+	id: number;
+	path: string;
+	before: string | null; // null: the agent created the note
+	after: string | null; // null: the agent deleted it
+	source: string; // which app (and machine) made it
+	actor: string;
+	created: number;
+	updated: number;
+}
+
+// The inbox isn't an index: it can't be rebuilt from git, so it lives
+// outside SCHEMA and survives schema changes.
+const INBOX = `CREATE TABLE IF NOT EXISTS inbox (
+	id      INTEGER PRIMARY KEY,
+	path    TEXT NOT NULL UNIQUE,
+	before  TEXT,
+	after   TEXT,
+	source  TEXT NOT NULL,
+	actor   TEXT NOT NULL,
+	created INTEGER NOT NULL,
+	updated INTEGER NOT NULL
+)`;
+
 type Row = Record<string, SqlStorageValue>;
 
 export class Store {
@@ -91,6 +117,66 @@ export class Store {
 			this.setMeta("schema_version", String(SCHEMA_VERSION));
 			this.setMeta("head", "");
 		}
+		sql.exec(INBOX);
+	}
+
+	// ---- inbox ---------------------------------------------------------------
+
+	// recordChange adds an agent's change to the inbox, or extends the
+	// pending one for the same note (keeping its original "before").
+	recordChange(path: string, before: string | null, after: string | null, source: string, actor: string, now: number) {
+		const rows = this.sql.exec(`SELECT before, source FROM inbox WHERE path = ?`, path).toArray();
+		if (rows.length) {
+			const original = rows[0].before as string | null;
+			if (original === after) {
+				this.sql.exec(`DELETE FROM inbox WHERE path = ?`, path); // changed back: nothing to review
+				return;
+			}
+			const sources = [...new Set([...String(rows[0].source).split(", "), source])].join(", ");
+			this.sql.exec(`UPDATE inbox SET after = ?, source = ?, actor = ?, updated = ? WHERE path = ?`, after, sources, actor, now, path);
+			return;
+		}
+		if (before === after) return;
+		this.sql.exec(`INSERT INTO inbox (path, before, after, source, actor, created, updated) VALUES (?, ?, ?, ?, ?, ?, ?)`, path, before, after, source, actor, now, now);
+	}
+
+	moveInbox(from: string, to: string, after: string | null) {
+		if (from === to) {
+			this.sql.exec(`UPDATE inbox SET after = ? WHERE path = ?`, after, to);
+			return;
+		}
+		this.sql.exec(`UPDATE OR REPLACE inbox SET path = ?, after = ? WHERE path = ?`, to, after, from);
+	}
+
+	inbox(): InboxItem[] {
+		return this.sql
+			.exec(`SELECT * FROM inbox ORDER BY updated DESC`)
+			.toArray()
+			.map((r) => ({
+				id: Number(r.id),
+				path: String(r.path),
+				before: r.before === null ? null : String(r.before),
+				after: r.after === null ? null : String(r.after),
+				source: String(r.source),
+				actor: String(r.actor),
+				created: Number(r.created),
+				updated: Number(r.updated),
+			}));
+	}
+
+	inboxItem(id: number): InboxItem | null {
+		return this.inbox().find((i) => i.id === id) ?? null;
+	}
+
+	inboxCount(): number {
+		return Number(this.sql.exec(`SELECT count(*) AS c FROM inbox`).one().c);
+	}
+
+	resolveInbox(where: { id?: number; path?: string; source?: string }) {
+		if (where.id !== undefined) this.sql.exec(`DELETE FROM inbox WHERE id = ?`, where.id);
+		else if (where.path !== undefined) this.sql.exec(`DELETE FROM inbox WHERE path = ?`, where.path);
+		else if (where.source !== undefined) this.sql.exec(`DELETE FROM inbox WHERE source = ?`, where.source);
+		else this.sql.exec(`DELETE FROM inbox`);
 	}
 
 	meta(key: string): string | null {

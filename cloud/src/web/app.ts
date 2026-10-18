@@ -234,12 +234,14 @@ web.post("/authorize", async (c) => {
 			return new Response(null, { status: 302, headers: denied.headers });
 		}
 		const approved = await oauth.approveConsent(c.req.raw, handle);
+		// The app's name goes with every change it makes (provenance).
+		const client = await oauth.describeConsent(approved.request).then((d) => d.clientName, () => undefined);
 		const { redirectTo } = await oauth.completeAuthorization({
 			request: approved.request,
 			userId: user.id,
 			metadata: { login: user.login },
 			scope: approved.request.scope,
-			props: { userId: user.id },
+			props: { userId: user.id, client },
 		});
 		approved.headers.set("Location", redirectTo);
 		return new Response(null, { status: 302, headers: approved.headers });

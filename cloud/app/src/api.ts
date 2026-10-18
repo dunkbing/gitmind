@@ -68,6 +68,22 @@ export interface Settings {
 	setupCommand: string;
 }
 
+export interface InboxItem {
+	id: number;
+	path: string;
+	before: string | null; // null: the app created the note
+	after: string | null; // null: the app deleted it
+	source: string;
+	actor: string;
+	created: number;
+	updated: number;
+}
+
+export interface ReviewSettings {
+	enabled: boolean;
+	trusted: string[];
+}
+
 export class ApiError extends Error {
 	constructor(
 		message: string,
@@ -112,6 +128,11 @@ export const api = {
 	search: (slug: string, q: { q?: string; tag?: string; category?: string; since?: string; limit?: number; mode?: "hybrid" | "keyword" | "semantic" }) =>
 		call<Hit[]>("GET", `${w(slug)}/search?${qs(Object.fromEntries(Object.entries(q).filter(([, v]) => v).map(([k, v]) => [k, String(v)])))}`),
 	related: (slug: string, path: string) => call<Hit[]>("GET", `${w(slug)}/related?${qs({ path })}`),
+	inbox: (slug: string) => call<{ items: InboxItem[]; settings: ReviewSettings; sources: string[] }>("GET", `${w(slug)}/inbox`),
+	inboxCount: (slug: string) => call<{ count: number }>("GET", `${w(slug)}/inbox/count`),
+	accept: (slug: string, ids: number[] | "all") => call<{ ok: true }>("POST", `${w(slug)}/inbox/accept`, ids === "all" ? { all: true } : { ids }),
+	reject: (slug: string, id: number, reason?: string) => call<{ path: string }>("POST", `${w(slug)}/inbox/${id}/reject`, { reason }),
+	setReview: (slug: string, settings: ReviewSettings) => call<ReviewSettings>("PUT", `${w(slug)}/review`, settings),
 	graph: (slug: string) => call<Graph>("GET", `${w(slug)}/graph`),
 	history: (slug: string) => call<Commit[]>("GET", `${w(slug)}/history`),
 	importFile: (slug: string, file: File) => {
