@@ -64,6 +64,10 @@ asking before each change:
   memory instructions to `~/.claude/CLAUDE.md`.
 - **Codex**: adds the MCP server to `~/.codex/config.toml` and the
   instructions to `~/.codex/AGENTS.md`.
+- **Claude Code's own memories**: Claude Code keeps an "auto memory" per
+  project on each machine (`~/.claude/projects/*/memory`), which doesn't
+  follow you anywhere else. When it finds some, setup offers to import them
+  (see below).
 
 Anything already in place is left alone. Run `gitmind agents` any time to do
 this again (for example after installing Codex), or `gitmind agents --yes` to
@@ -77,6 +81,22 @@ The hooks it adds:
 - **`gitmind nudge`** (Stop) reminds the agent once to save what it learned,
   after a stretch of 10 or more tool calls with no memory write.
 
+## Import Claude Code's memories
+
+```bash
+gitmind import claude-code --dry-run   # list what would be imported
+gitmind import claude-code             # import, after asking
+```
+
+Each memory becomes a note in its project's directory (`my-app/`, or
+`general/` for what Claude Code knows about you), titled as in its
+`MEMORY.md` index. Its one-line description becomes the first line, an
+observation categorized by the memory's type (feedback becomes `[instruction]`,
+for example), followed by its text, with `[[links]]` between memories pointing
+at the new titles. Notes are tagged `claude-code`. Everything goes in one
+commit; notes that already exist, or that look like they contain a secret, are
+skipped, so running it again is safe.
+
 ## Syncing
 
 Every write is committed immediately and pushed within seconds; the CLI also
@@ -86,5 +106,5 @@ Edits you make by hand (in Obsidian, say) are committed on the next sync.
 ## Commands
 
 ```
-gitmind [--dir DIR] setup | agents | update | auth | serve | context | nudge | init REMOTE | sync | reindex | search QUERY | recent [N] | version
+gitmind [--dir DIR] setup | agents | import claude-code | update | auth | serve | context | nudge | init REMOTE | sync | reindex | search QUERY | recent [N] | version
 ```

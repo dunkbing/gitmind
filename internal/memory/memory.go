@@ -220,6 +220,53 @@ func (a *App) Write(ctx context.Context, title, dir, content string, tags []stri
 	return n.Path, created, a.save(ctx, n, verb)
 }
 
+// ImportResult reports what Import did with each note.
+type ImportResult struct {
+	Written []string
+	Skipped map[string]string // path → why
+}
+
+// Import adds many notes in one commit: notes already in memory (same path)
+// are left alone, as are notes that look like they hold a secret. The
+// commit isn't a "memory:" change, since the user runs imports themselves:
+// gitmind cloud doesn't send it to the inbox for review.
+func (a *App) Import(ctx context.Context, source string, ns []notes.Note) (ImportResult, error) {
+	res := ImportResult{Skipped: map[string]string{}}
+	unlock, err := a.writeLock()
+	if err != nil {
+		return res, err
+	}
+	defer unlock()
+	now := time.Now()
+	for _, n := range ns {
+		if err := checkSecrets(n.Title, n.Body, strings.Join(n.Tags, " ")); err != nil {
+			res.Skipped[n.Path] = "looks like it contains a secret"
+			continue
+		}
+		if a.Store.Exists(n.Path) {
+			res.Skipped[n.Path] = "a note already exists there"
+			continue
+		}
+		mod, err := a.Store.Write(n)
+		if err != nil {
+			return res, err
+		}
+		if err := a.Index.Upsert(n, mod, now); err != nil {
+			return res, err
+		}
+		res.Written = append(res.Written, n.Path)
+	}
+	if len(res.Written) == 0 {
+		return res, nil
+	}
+	msg := fmt.Sprintf("gitmind: import %d notes from %s (%s)", len(res.Written), source, a.host)
+	if _, err := a.Repo.Commit(ctx, msg, res.Written...); err != nil {
+		return res, fmt.Errorf("imported the notes but git commit failed: %w", err)
+	}
+	a.schedulePush()
+	return res, nil
+}
+
 // EditOp is a change to a note's body.
 type EditOp struct {
 	Operation            string // append, prepend, find_replace or replace_section

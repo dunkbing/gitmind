@@ -19,3 +19,9 @@ existing notes are never overwritten.
 
 Imported conversations are raw material. Ask an agent to read the ones that
 matter and save the lasting facts as regular notes.
+
+## Claude Code's memories
+
+Claude Code keeps its own memories on each machine. The CLI imports them, one
+note each: run `gitmind import claude-code` (or accept the offer during
+`gitmind setup`). See [the CLI guide](/docs/cli/#import-claude-codes-memories).

@@ -107,7 +107,7 @@ func setupCmd(ctx context.Context, dir string, args []string) error {
 	if err != nil || !agents.enabled {
 		return err
 	}
-	a, err := newAgentSetup(agents.assumeYes)
+	a, err := newAgentSetup(dir, agents.assumeYes)
 	if err != nil {
 		return err
 	}

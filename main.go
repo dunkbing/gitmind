@@ -48,14 +48,21 @@ Commands:
                        --github        sync with a private repository on your
                                        GitHub account instead of a server
                        --local         keep notes on this computer only
-                     Without these, setup asks where to keep the notes. It then
-                     offers to add gitmind to Claude Code and Codex (--yes
-                     accepts, --no-agents skips).
-  agents             add gitmind to Claude Code and Codex: MCP server, Claude
-                     Code hooks, and memory instructions (asks first; --yes)
                        --repo NAME     with --github: NAME or OWNER/NAME
                                        (default gitmind-notes)
                        --public        with --github: create it public
+                     Without these, setup asks where to keep the notes. It then
+                     offers to add gitmind to Claude Code and Codex, and to
+                     import Claude Code's memories (--yes accepts, --no-agents
+                     skips).
+  agents             add gitmind to Claude Code and Codex: MCP server, Claude
+                     Code hooks, and memory instructions; offer to import
+                     Claude Code's memories (asks first; --yes)
+  import claude-code copy the memories Claude Code saved on this machine
+                     (~/.claude/projects/*/memory) into gitmind, one note each,
+                     in their project's directory
+                       --dry-run       only list what would be imported
+                       --yes           don't ask
   auth login|status|logout
                      manage the GitHub login used by setup --github
   serve              run the MCP server on stdio (default)
@@ -122,7 +129,7 @@ func main() {
 		yes := fs.Bool("yes", false, "make every change without asking")
 		fs.Parse(args)
 		var a *agentSetup
-		if a, err = newAgentSetup(*yes); err == nil {
+		if a, err = newAgentSetup(*dir, *yes); err == nil {
 			err = a.Run(ctx)
 		}
 	case "credential":
@@ -130,6 +137,8 @@ func main() {
 		if len(args) > 0 {
 			err = credentialHelper(ctx, args[0])
 		}
+	case "import":
+		err = importCmd(ctx, *dir, args)
 	case "init":
 		err = initRepo(ctx, *dir, args)
 	case "sync":

@@ -141,8 +141,14 @@ as AGENT_MEMORY.md tells them to.
 ## CLI
 
 ```
-gitmind [--dir DIR] [--sync-interval 3m] [setup|auth|serve|context|nudge|init [REMOTE]|sync|reindex|search QUERY|recent [N]|version]
+gitmind [--dir DIR] [--sync-interval 3m] [setup|agents|import claude-code|update|auth|serve|context|nudge|init [REMOTE]|sync|reindex|search QUERY|recent [N]|version]
 ```
+
+`gitmind import claude-code` copies the memories Claude Code saved on this
+machine (`~/.claude/projects/*/memory`, which stay on one machine) into
+gitmind, one note per memory in its project's directory, in one commit;
+`--dry-run` lists them first. `setup` and `agents` offer it when they find
+some.
 
 The notes directory defaults to `$GITMIND_DIR`, then `~/.gitmind`.
 Notes use the same frontmatter and `- [category] fact #tag` / `[[Link]]` style

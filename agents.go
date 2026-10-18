@@ -12,6 +12,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/dunkbing/gitmind/internal/claudecode"
+	"github.com/dunkbing/gitmind/internal/gitsync"
 )
 
 // agentMemory is the standing instruction for agents (AGENT_MEMORY.md),
@@ -26,6 +29,7 @@ var agentMemory string
 // already in place.
 type agentSetup struct {
 	home        string
+	dir         string // the notes repository, to import Claude Code's memories into
 	exe         string // absolute path of this gitmind binary
 	in          *bufio.Reader
 	out         io.Writer
@@ -35,7 +39,7 @@ type agentSetup struct {
 	run         func(name string, args ...string) error
 }
 
-func newAgentSetup(assumeYes bool) (*agentSetup, error) {
+func newAgentSetup(dir string, assumeYes bool) (*agentSetup, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return nil, err
@@ -48,7 +52,7 @@ func newAgentSetup(assumeYes bool) (*agentSetup, error) {
 		exe = resolved
 	}
 	return &agentSetup{
-		home: home, exe: exe, in: stdin, out: os.Stdout,
+		home: home, dir: dir, exe: exe, in: stdin, out: os.Stdout,
 		assumeYes: assumeYes, interactive: isTerminal(),
 		lookPath: exec.LookPath,
 		run: func(name string, args ...string) error {
@@ -81,6 +85,9 @@ func (a *agentSetup) Run(ctx context.Context) error {
 			return err
 		}
 		if err := a.instructions(ctx, "Claude Code", filepath.Join(a.home, ".claude", "CLAUDE.md")); err != nil {
+			return err
+		}
+		if err := a.claudeMemories(ctx); err != nil {
 			return err
 		}
 	}
@@ -275,6 +282,23 @@ func (a *agentSetup) instructions(ctx context.Context, agent, path string) error
 		return err
 	}
 	fmt.Fprintf(a.out, "✓ Added memory instructions to %s\n", tildePath(a.home, path))
+	return nil
+}
+
+// claudeMemories offers to import what Claude Code remembered on this
+// machine, which otherwise stays here.
+func (a *agentSetup) claudeMemories(ctx context.Context) error {
+	if a.dir == "" || !gitsync.IsRepo(a.dir) {
+		return nil
+	}
+	mems, err := claudecode.Find(claudecode.ConfigDir(a.home), a.home)
+	if err != nil || len(mems) == 0 {
+		return nil
+	}
+	fmt.Fprintln(a.out)
+	if err := importClaudeCode(ctx, a.dir, mems, a.out, func(q string) (bool, error) { return a.ask(ctx, q) }, false); err != nil {
+		fmt.Fprintf(a.out, "✗ couldn't import Claude Code's memories: %v\n", err)
+	}
 	return nil
 }
 
