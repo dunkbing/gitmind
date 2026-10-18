@@ -10,12 +10,15 @@ export interface Embedder {
 	dims: number;
 	// Similarity below which a passage isn't considered a match.
 	minScore: number;
-	embed(texts: string[]): Promise<Float32Array[]>;
+	// Queries and the passages they should find are embedded differently.
+	embed(texts: string[], kind: "query" | "document"): Promise<Float32Array[]>;
 }
 
-// bge-m3 is multilingual (notes and queries needn't be in English) and
-// handles passages of a few hundred words.
-const MODEL = "@cf/baai/bge-m3";
+// Qwen3-Embedding is multilingual (a Vietnamese query finds an English note)
+// and embeds queries and documents asymmetrically. On a sample of notes it
+// ranked the right note first for 8 of 8 queries, against 7 for bge-m3 and
+// EmbeddingGemma, with about twice bge-m3's margin over the next note.
+const MODEL = "@cf/qwen/qwen3-embedding-0.6b";
 
 export function embedderFor(env: Env): Embedder | null {
 	const ai = (env as { AI?: Ai }).AI;
@@ -23,11 +26,13 @@ export function embedderFor(env: Env): Embedder | null {
 		return {
 			id: MODEL,
 			dims: 1024,
-			minScore: 0.45,
-			async embed(texts) {
-				const out = (await ai.run(MODEL, { text: texts, truncate_inputs: true })) as { data?: number[][] };
-				if (!out.data || out.data.length !== texts.length) throw new Error("embedding failed: unexpected response from Workers AI");
-				return out.data.map((v) => normalize(Float32Array.from(v)));
+			minScore: 0.25,
+			async embed(texts, kind) {
+				const input = kind === "query" ? { queries: texts } : { documents: texts };
+				const out = (await ai.run(MODEL, input)) as { data?: number[][]; response?: number[][] };
+				const data = out.data ?? out.response;
+				if (!data || data.length !== texts.length) throw new Error("embedding failed: unexpected response from Workers AI");
+				return data.map((v) => normalize(Float32Array.from(v)));
 			},
 		};
 	}

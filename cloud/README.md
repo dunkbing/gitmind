@@ -17,8 +17,8 @@ that your laptops' gitmind CLI syncs with.
   a ⌘K palette, backlinks and outline, search with tag, category and date
   filters, a link graph, the change history, import and export.
 - **Semantic search**: notes are split into passages and embedded with
-  Workers AI (`@cf/baai/bge-m3`, multilingual) in the background after each
-  change; vectors live in the workspace's SQLite next to the FTS index (no
+  Workers AI (`@cf/qwen/qwen3-embedding-0.6b`, multilingual) in the
+  background after each change; vectors live in the workspace's SQLite next to the FTS index (no
   separate vector database) and search merges both rankings (reciprocal rank
   fusion). Related notes in the app come from the same vectors.
 - **Import** Claude and ChatGPT data exports, or a zip of Markdown notes.

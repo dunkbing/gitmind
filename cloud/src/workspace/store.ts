@@ -235,7 +235,10 @@ export class Store {
 			const b = best.get(v.noteId);
 			if (!b || score > b.score) best.set(v.noteId, { score, chunkId: v.chunkId });
 		}
-		const top = [...best].sort((a, b) => b[1].score - a[1].score).slice(0, limit);
+		// Scores vary by query; keep the notes close to the best one.
+		const sorted = [...best].sort((a, b) => b[1].score - a[1].score);
+		const cutoff = sorted.length ? sorted[0][1].score - 0.12 : 0;
+		const top = sorted.filter(([, b]) => b.score >= cutoff).slice(0, limit);
 		const out: (Hit & { score: number })[] = [];
 		for (const [noteId, { score, chunkId }] of top) {
 			const row = this.sql.exec(`SELECT ${HIT_COLUMNS}, c.text AS snippet FROM notes n JOIN chunks c ON c.id = ? WHERE n.id = ?`, chunkId, noteId).toArray()[0];

@@ -120,7 +120,7 @@ export class Workspace extends DurableObject<Env> {
 		let vec = this.queryVectors.get(text);
 		if (!vec) {
 			try {
-				[vec] = await this.embedder.embed([text]);
+				[vec] = await this.embedder.embed([text], "query");
 			} catch (e) {
 				console.error("query embedding failed, searching by keyword", e);
 				return null;
@@ -141,7 +141,7 @@ export class Workspace extends DurableObject<Env> {
 			if (!batch.length) return;
 			let vecs: Float32Array[];
 			try {
-				vecs = await this.embedder.embed(batch.map((c) => c.text));
+				vecs = await this.embedder.embed(batch.map((c) => c.text), "document");
 			} catch (e) {
 				console.error("embedding failed; retrying in a minute", e);
 				await this.ctx.storage.setAlarm(Date.now() + 60_000);

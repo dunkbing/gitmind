@@ -77,7 +77,7 @@ conversations: agents send it only what they choose to save or search. See
 Yes, in gitmind cloud. Search ranks notes by meaning and by keywords together,
 so "how do we ship" finds a note about the deploy script, in any language.
 gitmind.app embeds each note's passages with Cloudflare Workers AI (the
-multilingual bge-m3 model) when it changes, and keeps the vectors next to the
+multilingual Qwen3-Embedding model) when it changes, and keeps the vectors next to the
 keyword index: an index you can rebuild, never stored in your git repository.
 Filters by folder, tag, category and date apply to both.
 
