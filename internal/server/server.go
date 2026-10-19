@@ -22,23 +22,26 @@ A suggestion is not a decision until the user confirms it; your own output only 
 Skip one-off requests, routine steps, and anything already in the code or git history. Never store secrets.
 Write facts as "- [category] fact #tag" with categories such as decision, preference, instruction (standing rules
 like "from now on..."), gotcha, anti-pattern, setup, task (with status), artifact (with a link).
-When a fact changes, update it and keep the old version under a "## History" section with the date, rather than
-silently overwriting. Prefer editing an existing note over creating a near-duplicate. Notes marked locked are the user's.`
+When a fact changes, replace it with edit_note's supersede operation, which keeps the old version under "## History" with
+the date, rather than silently overwriting it. When a save reports possibly conflicting facts, supersede the outdated one.
+Prefer editing an existing note over creating a near-duplicate. Notes marked locked are the user's.`
 
-type searchArgs struct {
-	Query     string   `json:"query,omitempty" jsonschema:"words to look for in titles, tags and bodies; notes containing all of them rank first. May be omitted when filtering"`
-	Directory string   `json:"directory,omitempty" jsonschema:"only notes under this directory, e.g. a project name"`
-	Tags      []string `json:"tags,omitempty" jsonschema:"only notes with all of these tags (frontmatter tags or inline #tags)"`
-	Category  string   `json:"category,omitempty" jsonschema:"only notes with observations in this category, e.g. decision or gotcha; the matching lines are shown"`
-	Since     string   `json:"since,omitempty" jsonschema:"only notes updated on or after this date (YYYY-MM-DD) or within this period (e.g. 7d, 2w, 3m, 1y)"`
-	Before    string   `json:"before,omitempty" jsonschema:"only notes last updated before this date (YYYY-MM-DD)"`
-	Limit     int      `json:"limit,omitempty" jsonschema:"maximum number of results (default 10)"`
-	Mode      string   `json:"mode,omitempty" jsonschema:"hybrid (default): by meaning and keywords, when semantic search is available; keyword: exact words only; semantic: meaning only"`
+// SearchArgs are search_notes' arguments.
+type SearchArgs struct {
+	Query          string   `json:"query,omitempty" jsonschema:"words to look for in titles, tags and bodies; notes containing all of them rank first. May be omitted when filtering"`
+	Directory      string   `json:"directory,omitempty" jsonschema:"only notes under this directory, e.g. a project name"`
+	Tags           []string `json:"tags,omitempty" jsonschema:"only notes with all of these tags (frontmatter tags or inline #tags)"`
+	Category       string   `json:"category,omitempty" jsonschema:"only notes with observations in this category, e.g. decision or gotcha; the matching lines are shown"`
+	Since          string   `json:"since,omitempty" jsonschema:"only notes updated on or after this date (YYYY-MM-DD) or within this period (e.g. 7d, 2w, 3m, 1y)"`
+	Before         string   `json:"before,omitempty" jsonschema:"only notes last updated before this date (YYYY-MM-DD)"`
+	Limit          int      `json:"limit,omitempty" jsonschema:"maximum number of results (default 10)"`
+	Mode           string   `json:"mode,omitempty" jsonschema:"hybrid (default): by meaning and keywords, when semantic search is available; keyword: exact words only; semantic: meaning only"`
+	IncludeHistory bool     `json:"include_history,omitempty" jsonschema:"also match facts kept under History headings (replaced or removed ones), e.g. to find why something changed; notes matched only there come last, marked [history]"`
 }
 
 // RemoteSearch searches the same notes on a gitmind server, which ranks by
 // meaning (embeddings) as well as keywords.
-type RemoteSearch func(ctx context.Context, in searchArgs) ([]index.Hit, error)
+type RemoteSearch func(ctx context.Context, in SearchArgs) ([]index.Hit, error)
 
 // Option configures the server.
 type Option func(*options)
@@ -49,12 +52,8 @@ type options struct {
 
 // WithRemoteSearch adds semantic search through a gitmind server that has
 // the same notes. Without it (or when it fails) search uses keywords only.
-func WithRemoteSearch(f func(ctx context.Context, query, directory string, tags []string, category, since, before string, limit int, mode string) ([]index.Hit, error)) Option {
-	return func(o *options) {
-		o.remote = func(ctx context.Context, in searchArgs) ([]index.Hit, error) {
-			return f(ctx, in.Query, in.Directory, in.Tags, in.Category, in.Since, in.Before, in.Limit, in.Mode)
-		}
-	}
+func WithRemoteSearch(f RemoteSearch) Option {
+	return func(o *options) { o.remote = f }
 }
 
 type readArgs struct {
@@ -77,9 +76,9 @@ type pinArgs struct {
 
 type editArgs struct {
 	Identifier           string `json:"identifier" jsonschema:"note path, permalink or exact title"`
-	Operation            string `json:"operation" jsonschema:"append, prepend, find_replace or replace_section"`
-	Content              string `json:"content" jsonschema:"text to add; the replacement text for find_replace; the new content under the heading for replace_section"`
-	FindText             string `json:"find_text,omitempty" jsonschema:"text to replace (find_replace only)"`
+	Operation            string `json:"operation" jsonschema:"append, prepend, find_replace, replace_section, or supersede to replace a fact that changed"`
+	Content              string `json:"content" jsonschema:"text to add; the replacement text for find_replace; the new content under the heading for replace_section; the new fact for supersede (empty to retire the old one)"`
+	FindText             string `json:"find_text,omitempty" jsonschema:"find_replace: text to replace; supersede: the current fact to replace, e.g. '[decision] use bge-m3' (list marker, case and trailing #tags don't matter)"`
 	ExpectedReplacements int    `json:"expected_replacements,omitempty" jsonschema:"fail unless find_text occurs exactly this many times"`
 	Section              string `json:"section,omitempty" jsonschema:"heading text whose content to replace (replace_section only); its subsections are replaced too"`
 }
@@ -128,7 +127,7 @@ func New(app *memory.App, version string, opts ...Option) *mcp.Server {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "search_notes",
 		Description: searchDescription(o.remote != nil),
-	}, func(ctx context.Context, _ *mcp.CallToolRequest, in searchArgs) (*mcp.CallToolResult, any, error) {
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, in SearchArgs) (*mcp.CallToolResult, any, error) {
 		q, err := toQuery(in, time.Now())
 		if err != nil {
 			return nil, nil, err
@@ -214,10 +213,11 @@ func New(app *memory.App, version string, opts ...Option) *mcp.Server {
 				return nil, nil, err
 			}
 		}
+		facts := notes.CurrentObservations(in.Content)
 		if !created {
-			return text("Updated " + rel), nil, nil
+			return text("Updated " + rel + conflictsText(app, rel, facts)), nil, nil
 		}
-		msg := "Created " + rel
+		msg := "Created " + rel + conflictsText(app, rel, facts)
 		// A cheap duplicate check: the agent decides whether to merge.
 		if similar, err := app.Similar(rel, 3); err == nil && len(similar) > 0 {
 			msg += "\n\nPossibly overlapping notes. If the new note duplicates one of them, merge it in with edit_note " +
@@ -243,8 +243,9 @@ func New(app *memory.App, version string, opts ...Option) *mcp.Server {
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "edit_note",
-		Description: "Edit a memory note in place: append, prepend, find_replace text, or replace_section to rewrite " +
-			"everything under one heading (added at the end if the heading doesn't exist).",
+		Description: "Edit a memory note in place: append, prepend, find_replace text, replace_section to rewrite " +
+			"everything under one heading (added at the end if the heading doesn't exist), or supersede a fact that changed: " +
+			"the new fact takes its place and the old one moves under the note's History heading with today's date.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in editArgs) (*mcp.CallToolResult, any, error) {
 		res, err := app.Edit(ctx, in.Identifier, memory.EditOp{
 			Operation: in.Operation, Content: in.Content, FindText: in.FindText,
@@ -253,10 +254,16 @@ func New(app *memory.App, version string, opts ...Option) *mcp.Server {
 		if err != nil {
 			return nil, nil, err
 		}
-		if res.AddedSection {
-			return text(fmt.Sprintf("Edited %s: no section %q existed, so it was added at the end", res.Path, in.Section)), nil, nil
+		msg := "Edited " + res.Path
+		switch {
+		case res.AddedSection:
+			msg = fmt.Sprintf("Edited %s: no section %q existed, so it was added at the end", res.Path, in.Section)
+		case in.Operation == "supersede" && strings.TrimSpace(in.Content) == "":
+			msg = "Edited " + res.Path + ": the fact moved to History"
+		case in.Operation == "supersede":
+			msg = "Edited " + res.Path + ": the new fact replaced the old one, which moved to History"
 		}
-		return text("Edited " + res.Path), nil, nil
+		return text(msg + conflictsText(app, res.Path, res.Added)), nil, nil
 	})
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -329,8 +336,8 @@ func New(app *memory.App, version string, opts ...Option) *mcp.Server {
 	return s
 }
 
-func toQuery(in searchArgs, now time.Time) (index.Query, error) {
-	q := index.Query{Text: in.Query, Tags: in.Tags, Category: in.Category, Limit: limit(in.Limit, 10)}
+func toQuery(in SearchArgs, now time.Time) (index.Query, error) {
+	q := index.Query{Text: in.Query, Tags: in.Tags, Category: in.Category, Limit: limit(in.Limit, 10), IncludeHistory: in.IncludeHistory}
 	var err error
 	if q.Dir, err = notes.CleanDir(in.Directory); err != nil {
 		return q, err
@@ -375,6 +382,37 @@ func parseWhen(s string, now time.Time) (time.Time, error) {
 	return time.Time{}, fmt.Errorf("%q is not a date (YYYY-MM-DD) or period (7d, 2w, 3m, 1y)", s)
 }
 
+// conflictsText lists current facts that may conflict with facts just saved,
+// for the agent to supersede if they're outdated. Failures are only logged:
+// the save itself succeeded.
+func conflictsText(app *memory.App, rel string, facts []notes.Observation) string {
+	if len(facts) == 0 {
+		return ""
+	}
+	conflicts, err := app.Conflicts(rel, facts)
+	if err != nil {
+		if app.Log != nil {
+			app.Log.Printf("checking for conflicting facts: %v", err)
+		}
+		return ""
+	}
+	if len(conflicts) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("\n\nPossibly conflicting facts. If an existing one is outdated, supersede it with edit_note " +
+		"(operation \"supersede\", find_text: the old fact); if it says the same thing, remove the duplicate. " +
+		"If they don't conflict, ignore this.\n")
+	for _, c := range conflicts {
+		fmt.Fprintf(&b, "- new: [%s] %s\n  existing in %s: [%s] %s", c.Fact.Category, c.Fact.Text, c.With.Path, c.With.Category, c.With.Text)
+		if c.Same {
+			b.WriteString(" (same wording)")
+		}
+		b.WriteString("\n")
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
 func formatHits(empty string, hits []index.Hit) string {
 	if len(hits) == 0 {
 		return empty
@@ -384,6 +422,9 @@ func formatHits(empty string, hits []index.Hit) string {
 		fmt.Fprintf(&b, "- %s (%s, modified %s)", h.Title, h.Path, h.Modified.Format("2006-01-02"))
 		if h.Pinned {
 			b.WriteString(" [pinned]")
+		}
+		if h.History {
+			b.WriteString(" [history]")
 		}
 		if len(h.Tags) > 0 {
 			fmt.Fprintf(&b, " #%s", strings.Join(h.Tags, " #"))
@@ -429,7 +470,7 @@ func searchDescription(semantic bool) string {
 // rank fusion. The local index stays authoritative: notes the server has
 // but this machine doesn't (deleted here, not yet pushed) are left out, and
 // any failure of the server falls back to keywords alone.
-func search(ctx context.Context, app *memory.App, remote RemoteSearch, in searchArgs, q index.Query) ([]index.Hit, error) {
+func search(ctx context.Context, app *memory.App, remote RemoteSearch, in SearchArgs, q index.Query) ([]index.Hit, error) {
 	if remote == nil || strings.TrimSpace(in.Query) == "" || in.Mode == "keyword" {
 		return app.Index.Search(q)
 	}

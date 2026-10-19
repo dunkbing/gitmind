@@ -319,6 +319,7 @@ type SearchHit struct {
 	Snippet      string   `json:"snippet"`
 	Pinned       bool     `json:"pinned"`
 	Observations []string `json:"observations"`
+	History      bool     `json:"history"` // matched only in History sections
 }
 
 // SearchArgs are search_notes' arguments, as the cloud takes them.
@@ -331,6 +332,8 @@ type SearchArgs struct {
 	Before    string   `json:"before,omitempty"`
 	Limit     int      `json:"limit,omitempty"`
 	Mode      string   `json:"mode,omitempty"`
+
+	IncludeHistory bool `json:"include_history,omitempty"`
 }
 
 // Search searches the workspace on the server, which ranks by meaning as

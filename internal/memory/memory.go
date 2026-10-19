@@ -3,6 +3,7 @@
 package memory
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -269,16 +271,17 @@ func (a *App) Import(ctx context.Context, source string, ns []notes.Note) (Impor
 
 // EditOp is a change to a note's body.
 type EditOp struct {
-	Operation            string // append, prepend, find_replace or replace_section
+	Operation            string // append, prepend, find_replace, replace_section or supersede
 	Content              string
-	FindText             string // find_replace: the text to replace
+	FindText             string // find_replace: the text to replace; supersede: the fact to replace
 	ExpectedReplacements int    // find_replace: fail unless FindText occurs this often
 	Section              string // replace_section: the heading whose content is replaced
 }
 
 type EditResult struct {
 	Path         string
-	AddedSection bool // replace_section found no such heading and added it
+	AddedSection bool                // replace_section found no such heading and added it
+	Added        []notes.Observation // current facts the edit added or changed
 }
 
 func (a *App) Edit(ctx context.Context, id string, op EditOp) (EditResult, error) {
@@ -302,6 +305,7 @@ func (a *App) Edit(ctx context.Context, id string, op EditOp) (EditResult, error
 		return EditResult{}, err
 	}
 	res := EditResult{Path: rel}
+	before := n.Body
 	switch op.Operation {
 	case "append":
 		n.Body = strings.TrimRight(n.Body, "\n") + separator(n.Body, op.Content) + strings.TrimLeft(op.Content, "\n")
@@ -323,10 +327,81 @@ func (a *App) Edit(ctx context.Context, id string, op EditOp) (EditResult, error
 		if n.Body, res.AddedSection, err = notes.ReplaceSection(n.Body, op.Section, op.Content); err != nil {
 			return res, fmt.Errorf("%s: %w", rel, err)
 		}
+	case "supersede":
+		if n.Body, err = notes.Supersede(n.Body, op.FindText, op.Content, time.Now().Format(time.DateOnly)); err != nil {
+			return res, fmt.Errorf("%s: %w", rel, err)
+		}
 	default:
-		return res, fmt.Errorf("unknown operation %q (use append, prepend, find_replace or replace_section)", op.Operation)
+		return res, fmt.Errorf("unknown operation %q (use append, prepend, find_replace, replace_section or supersede)", op.Operation)
 	}
+	res.Added = NewFacts(before, n.Body)
 	return res, a.save(ctx, n, "edit")
+}
+
+// NewFacts returns the current facts in after that weren't in before.
+func NewFacts(before, after string) []notes.Observation {
+	had := map[notes.Observation]bool{}
+	for _, o := range notes.CurrentObservations(before) {
+		had[o] = true
+	}
+	var added []notes.Observation
+	for _, o := range notes.CurrentObservations(after) {
+		if !had[o] {
+			added = append(added, o)
+		}
+	}
+	return added
+}
+
+// Conflict is a current fact that may say the same thing as a newly saved
+// one, or that the new one may replace.
+type Conflict struct {
+	Fact  notes.Observation // the new fact
+	With  index.Fact        // the existing one
+	Same  bool              // they say exactly the same thing
+	score float64
+}
+
+// Conflicts finds current facts of the same category, in the note's project
+// directory and general/, that are about the same thing as facts just
+// saved to the note at rel: at most two per fact and five in all.
+func (a *App) Conflicts(rel string, facts []notes.Observation) ([]Conflict, error) {
+	dirs := []string{"general"}
+	if i := strings.Index(rel, "/"); i < 0 {
+		dirs = append(dirs, "")
+	} else if top := rel[:i]; top != "general" {
+		dirs = append(dirs, top)
+	}
+	saved := map[string]bool{}
+	for _, f := range facts {
+		saved[f.Category+"\x00"+f.Text] = true
+	}
+	var out []Conflict
+	byCategory := map[string][]index.Fact{}
+	for _, f := range facts {
+		existing, ok := byCategory[f.Category]
+		if !ok {
+			var err error
+			if existing, err = a.Index.CurrentFacts(f.Category, dirs); err != nil {
+				return nil, err
+			}
+			byCategory[f.Category] = existing
+		}
+		words := notes.FactWords(f.Text)
+		var found []Conflict
+		for _, e := range existing {
+			if e.Path == rel && saved[e.Category+"\x00"+e.Text] {
+				continue // the new fact itself, or another one just saved
+			}
+			if score := notes.FactOverlap(words, notes.FactWords(e.Text)); score >= 0.5 {
+				same := strings.EqualFold(strings.Join(strings.Fields(f.Text), " "), strings.Join(strings.Fields(e.Text), " "))
+				found = append(found, Conflict{Fact: f, With: e, Same: same, score: score})
+			}
+		}
+		slices.SortStableFunc(found, func(x, y Conflict) int { return cmp.Compare(y.score, x.score) })
+		out = append(out, found[:min(len(found), 2)]...)
+	}
+	return out[:min(len(out), 5)], nil
 }
 
 // Move gives a note a new directory (nil keeps the current one) and/or

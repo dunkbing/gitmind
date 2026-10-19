@@ -25,10 +25,10 @@ func TestParseWhen(t *testing.T) {
 			t.Errorf("parseWhen(%q) accepted", bad)
 		}
 	}
-	if _, err := toQuery(searchArgs{}, now); err == nil {
+	if _, err := toQuery(SearchArgs{}, now); err == nil {
 		t.Error("empty search accepted")
 	}
-	if q, err := toQuery(searchArgs{Category: "decision", Since: "7d"}, now); err != nil || q.Limit != 10 {
+	if q, err := toQuery(SearchArgs{Category: "decision", Since: "7d"}, now); err != nil || q.Limit != 10 {
 		t.Errorf("filter-only search: %+v, %v", q, err)
 	}
 }

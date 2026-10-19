@@ -2,7 +2,8 @@
 // since the CLI and the cloud write the same files. These mirror the Go tests.
 import { describe, expect, it } from "vitest";
 import {
-	cleanDir, format, inlineTags, links, linkTarget, observations, parse, replaceSection, rewriteLinks, slugify, validPath,
+	cleanDir, currentObservations, factOverlap, factWords, format, inlineTags, links, linkTarget, observations, parse, replaceSection,
+	rewriteLinks, slugify, splitHistory, supersede, validPath,
 } from "../../src/engine/notes";
 import { findSecret } from "../../src/engine/secrets";
 import { parseExport } from "../../src/import";
@@ -75,6 +76,47 @@ describe("notes", () => {
 	it("finds secrets without false positives", () => {
 		expect(findSecret("token ghp_abcdefghijklmnopqrstuvwxyz0123456789")).toBe("GitHub token");
 		expect(findSecret("The API key lives in 1Password.")).toBe("");
+	});
+});
+
+describe("facts that change", () => {
+	it("splits off History like Go", () => {
+		const body = "- [decision] use Qwen3 #search\n\n## History\n\n- [decision] use bge-m3 (replaced 2026-10-18)\n\n### Older\n\n- [decision] use FTS only\n\n## Next\n\n- [task] ship it\n```\n## History\n```\n";
+		const { current, history } = splitHistory(body);
+		expect(current).not.toContain("bge-m3");
+		expect(current).not.toContain("FTS only");
+		expect(current).toContain("ship it");
+		expect(current).toContain("```\n## History\n```");
+		expect(history).toContain("bge-m3");
+		expect(history).toContain("FTS only");
+		expect(currentObservations(body).map((o) => o.text)).toEqual(["use Qwen3 #search", "ship it"]);
+	});
+
+	it("supersedes facts like Go", () => {
+		let body = "Intro.\n\n- [decision] Use  bge-m3 embeddings #search\n  - [gotcha] slow on ARM\n- [setup] runs nightly\n";
+		body = supersede(body, "use bge-m3 embeddings", "[decision] use Qwen3 embeddings #search", "2026-10-19");
+		expect(body).toBe("Intro.\n\n- [decision] use Qwen3 embeddings #search\n  - [gotcha] slow on ARM\n- [setup] runs nightly\n\n## History\n\n- [decision] Use  bge-m3 embeddings #search (replaced 2026-10-19)\n");
+		body = supersede(body, "- [gotcha] slow on ARM", "fast since Go 1.25", "2026-10-20");
+		expect(body).toContain("\n  - fast since Go 1.25\n");
+		expect(body.endsWith("## History\n\n- [gotcha] slow on ARM (replaced 2026-10-20)\n- [decision] Use  bge-m3 embeddings #search (replaced 2026-10-19)\n")).toBe(true);
+		expect(() => supersede(body, "use bge-m3 embeddings", "x", "2026-10-21")).toThrow(/current facts/);
+		body = supersede(body, "[setup] runs nightly", "", "2026-10-21");
+		expect(body.split("## History")[0]).not.toContain("nightly");
+		expect(body).toContain("- [setup] runs nightly (removed 2026-10-21)");
+		const twice = "- [task] deploy\n- [task] deploy #ops\n";
+		expect(() => supersede(twice, "deploy", "done", "2026-10-19")).toThrow(/2 current facts/);
+		expect(() => supersede(twice, "[decision] deploy", "done", "2026-10-19")).toThrow();
+	});
+
+	it("finds facts about the same thing like Go", () => {
+		const cases: [string, string, boolean][] = [
+			["[decision] use bge-m3 embeddings for search", "[decision] use Qwen3 embeddings, which ranked notes better than bge-m3", true],
+			["deploys go through Cloudflare builds", "Cloudflare builds deploy on every push", true],
+			["prefers tabs", "prefers tabs #style", true],
+			["use bun, not npm", "deploy with wrangler", false],
+			["the search index lives in SQLite", "the session context has a size budget", false],
+		];
+		for (const [a, b, conflict] of cases) expect([a, b, factOverlap(factWords(a), factWords(b)) >= 0.5]).toEqual([a, b, conflict]);
 	});
 });
 

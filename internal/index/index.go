@@ -21,7 +21,7 @@ import (
 
 // schemaVersion is bumped whenever the schema changes; an index built with
 // another version is dropped and rebuilt from the notes on disk.
-const schemaVersion = 5
+const schemaVersion = 6
 
 const schema = `
 CREATE TABLE notes (
@@ -39,7 +39,8 @@ CREATE TABLE notes (
 CREATE INDEX notes_slug ON notes (slug);
 CREATE INDEX notes_title_slug ON notes (title_slug);
 CREATE INDEX notes_updated ON notes (updated);
-CREATE VIRTUAL TABLE notes_fts USING fts5(title, tags, body, tokenize = 'porter unicode61');
+-- body is the note without its History sections, which go in history.
+CREATE VIRTUAL TABLE notes_fts USING fts5(title, tags, body, history, tokenize = 'porter unicode61');
 CREATE TABLE links (
 	source_id   INTEGER NOT NULL,
 	target      TEXT NOT NULL, -- as written inside [[ ]]
@@ -51,7 +52,8 @@ CREATE INDEX links_source ON links (source_id);
 CREATE INDEX links_slug ON links (target_slug);
 CREATE TABLE note_tags (note_id INTEGER NOT NULL, tag TEXT NOT NULL);
 CREATE INDEX note_tags_tag ON note_tags (tag, note_id);
-CREATE TABLE observations (note_id INTEGER NOT NULL, category TEXT NOT NULL, text TEXT NOT NULL);
+-- current is 0 for facts kept under a History heading.
+CREATE TABLE observations (note_id INTEGER NOT NULL, category TEXT NOT NULL, text TEXT NOT NULL, current INTEGER NOT NULL);
 CREATE INDEX observations_category ON observations (category, note_id);
 `
 
@@ -71,6 +73,7 @@ type Hit struct {
 	Summary      string
 	Pinned       bool
 	Observations []string // lines matching Query.Category, when filtering by category
+	History      bool     // matched only in the note's History, with Query.IncludeHistory
 }
 
 func Open(file string) (*Index, error) {
@@ -229,8 +232,9 @@ func upsert(tx *sql.Tx, n notes.Note, mod, updated time.Time) error {
 			return err
 		}
 	}
-	if _, err := tx.Exec(`INSERT INTO notes_fts (rowid, title, tags, body) VALUES (?, ?, ?, ?)`,
-		id, n.Title, tags, n.Body); err != nil {
+	current, history := notes.SplitHistory(n.Body)
+	if _, err := tx.Exec(`INSERT INTO notes_fts (rowid, title, tags, body, history) VALUES (?, ?, ?, ?, ?)`,
+		id, n.Title, tags, current, history); err != nil {
 		return err
 	}
 	for _, l := range notes.Links(n.Body) {
@@ -245,9 +249,11 @@ func upsert(tx *sql.Tx, n notes.Note, mod, updated time.Time) error {
 			return err
 		}
 	}
-	for _, o := range notes.Observations(n.Body) {
-		if _, err := tx.Exec(`INSERT INTO observations (note_id, category, text) VALUES (?, ?, ?)`, id, o.Category, o.Text); err != nil {
-			return err
+	for i, part := range []string{current, history} {
+		for _, o := range notes.Observations(part) {
+			if _, err := tx.Exec(`INSERT INTO observations (note_id, category, text, current) VALUES (?, ?, ?, ?)`, id, o.Category, o.Text, i == 0); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -293,6 +299,9 @@ type Query struct {
 	Since    time.Time // only notes updated at or after this time
 	Before   time.Time // only notes last updated before this time
 	Limit    int
+	// IncludeHistory also matches facts kept under History headings, which
+	// are otherwise left out; notes matched only there come last.
+	IncludeHistory bool
 }
 
 // recencyBoost scales BM25 scores (negative; lower is better) by up to 1.3x
@@ -318,10 +327,13 @@ func (ix *Index) Search(q Query) ([]Hit, error) {
 			FROM notes n WHERE 1 = 1`+filter+`
 			ORDER BY n.updated DESC LIMIT ?`, append(args, q.Limit)...)
 	default:
-		hits, err = ix.ftsSearch(strings.Join(terms, " "), filter, args, q.Limit)
-		if err == nil && len(terms) > 1 && len(hits) < q.Limit {
+		hits, err = ix.keyword(terms, currentColumns, filter, args, q.Limit)
+		if err == nil && q.IncludeHistory && len(hits) < q.Limit {
 			var more []Hit
-			more, err = ix.ftsSearch(strings.Join(terms, " OR "), filter, args, q.Limit)
+			more, err = ix.keyword(terms, historyColumn, filter, args, q.Limit)
+			for i := range more {
+				more[i].History = true
+			}
 			hits = appendNew(hits, more, q.Limit)
 		}
 	}
@@ -330,7 +342,7 @@ func (ix *Index) Search(q Query) ([]Hit, error) {
 	}
 	if q.Category != "" {
 		for i := range hits {
-			if hits[i].Observations, err = ix.observations(hits[i].Path, q.Category); err != nil {
+			if hits[i].Observations, err = ix.observations(hits[i].Path, q.Category, q.IncludeHistory); err != nil {
 				return nil, err
 			}
 		}
@@ -338,14 +350,37 @@ func (ix *Index) Search(q Query) ([]Hit, error) {
 	return hits, nil
 }
 
-func (ix *Index) ftsSearch(match, filter string, filterArgs []any, limit int) ([]Hit, error) {
-	args := append([]any{match}, filterArgs...)
+// The FTS columns searched: the note without its History sections, or the
+// History sections, and the column snippets come from.
+type ftsColumns struct {
+	filter  string
+	snippet int
+}
+
+var (
+	currentColumns = ftsColumns{"{title tags body}", 2}
+	historyColumn  = ftsColumns{"history", 3}
+)
+
+// keyword finds notes with every word first, then notes with some words.
+func (ix *Index) keyword(terms []string, cols ftsColumns, filter string, args []any, limit int) ([]Hit, error) {
+	hits, err := ix.ftsSearch(strings.Join(terms, " "), cols, filter, args, limit)
+	if err == nil && len(terms) > 1 && len(hits) < limit {
+		var more []Hit
+		more, err = ix.ftsSearch(strings.Join(terms, " OR "), cols, filter, args, limit)
+		hits = appendNew(hits, more, limit)
+	}
+	return hits, err
+}
+
+func (ix *Index) ftsSearch(match string, cols ftsColumns, filter string, filterArgs []any, limit int) ([]Hit, error) {
+	args := append([]any{cols.filter + " : (" + match + ")"}, filterArgs...)
 	args = append(args, time.Now().UnixNano(), limit)
 	return ix.query(`
-		SELECT `+hitColumns+`, snippet(notes_fts, 2, '**', '**', '…', 16)
+		SELECT `+hitColumns+`, snippet(notes_fts, `+fmt.Sprint(cols.snippet)+`, '**', '**', '…', 16)
 		FROM notes_fts JOIN notes n ON n.id = notes_fts.rowid
 		WHERE notes_fts MATCH ?`+filter+`
-		ORDER BY bm25(notes_fts, 10.0, 5.0, 1.0) * `+recencyBoost+`
+		ORDER BY bm25(notes_fts, 10.0, 5.0, 1.0, 1.0) * `+recencyBoost+`
 		LIMIT ?`, args...)
 }
 
@@ -361,8 +396,8 @@ func filterSQL(q Query) (string, []any) {
 		args = append(args, t)
 	}
 	if c := strings.ToLower(strings.TrimSpace(q.Category)); c != "" {
-		sb.WriteString(` AND EXISTS (SELECT 1 FROM observations o WHERE o.note_id = n.id AND o.category = ?)`)
-		args = append(args, c)
+		sb.WriteString(` AND EXISTS (SELECT 1 FROM observations o WHERE o.note_id = n.id AND o.category = ? AND (o.current OR ?))`)
+		args = append(args, c, q.IncludeHistory)
 	}
 	if !q.Since.IsZero() {
 		sb.WriteString(` AND n.updated >= ?`)
@@ -375,10 +410,10 @@ func filterSQL(q Query) (string, []any) {
 	return sb.String(), args
 }
 
-func (ix *Index) observations(p, category string) ([]string, error) {
+func (ix *Index) observations(p, category string, includeHistory bool) ([]string, error) {
 	rows, err := ix.db.Query(`
 		SELECT o.text FROM observations o JOIN notes n ON n.id = o.note_id
-		WHERE n.path = ? AND o.category = ? ORDER BY o.rowid`, p, strings.ToLower(strings.TrimSpace(category)))
+		WHERE n.path = ? AND o.category = ? AND (o.current OR ?) ORDER BY o.rowid`, p, strings.ToLower(strings.TrimSpace(category)), includeHistory)
 	if err != nil {
 		return nil, err
 	}
@@ -408,6 +443,46 @@ func appendNew(hits, more []Hit, limit int) []Hit {
 		}
 	}
 	return hits
+}
+
+// Fact is a current observation and the note it's in.
+type Fact struct {
+	Path, Title, Category, Text string
+}
+
+// CurrentFacts returns the current observations in category ("" for any)
+// of the notes under any of dirs ("" for the top level).
+func (ix *Index) CurrentFacts(category string, dirs []string) ([]Fact, error) {
+	var where []string
+	args := []any{strings.ToLower(strings.TrimSpace(category)), strings.ToLower(strings.TrimSpace(category))}
+	for _, d := range dirs {
+		if d == "" {
+			where = append(where, `n.path NOT LIKE '%/%'`)
+		} else {
+			where = append(where, `n.path LIKE ? || '/%'`)
+			args = append(args, d)
+		}
+	}
+	if len(where) == 0 {
+		return nil, nil
+	}
+	rows, err := ix.db.Query(`
+		SELECT n.path, n.title, o.category, o.text FROM observations o JOIN notes n ON n.id = o.note_id
+		WHERE o.current AND (? = '' OR o.category = ?) AND (`+strings.Join(where, " OR ")+`)
+		ORDER BY n.updated DESC, o.rowid`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Fact
+	for rows.Next() {
+		var f Fact
+		if err := rows.Scan(&f.Path, &f.Title, &f.Category, &f.Text); err != nil {
+			return nil, err
+		}
+		out = append(out, f)
+	}
+	return out, rows.Err()
 }
 
 func (ix *Index) Recent(limit int) ([]Hit, error) {

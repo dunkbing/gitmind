@@ -507,25 +507,227 @@ func Observations(body string) []Observation {
 // CurrentObservations is Observations without those under a "History"
 // heading, where facts that were replaced are kept for the record.
 func CurrentObservations(body string) []Observation {
-	var obs []Observation
-	history := false
-	historyLevel := 0
-	for _, line := range unfencedLines(body) {
-		if m := headingRe.FindStringSubmatch(line); m != nil {
-			level := len(m[1])
-			if history && level > historyLevel {
-				continue // a subsection of History
-			}
-			history = strings.EqualFold(strings.TrimSpace(m[2]), "history")
-			historyLevel = level
-			continue
+	current, _ := SplitHistory(body)
+	return Observations(current)
+}
+
+// SplitHistory separates the parts of body under a "History" heading (any
+// level, with its subsections), where replaced facts are kept, from the rest.
+func SplitHistory(body string) (current, history string) {
+	lines := strings.Split(body, "\n")
+	mask := historyLines(lines)
+	var cur, hist []string
+	for i, line := range lines {
+		if mask[i] {
+			hist = append(hist, line)
+		} else {
+			cur = append(cur, line)
 		}
-		if history {
-			continue
-		}
-		obs = append(obs, Observations(line)...)
 	}
-	return obs
+	return strings.Join(cur, "\n"), strings.Join(hist, "\n")
+}
+
+// historyLines marks the lines of History sections, headings included.
+func historyLines(lines []string) []bool {
+	mask := make([]bool, len(lines))
+	history, level, fenced := false, 0, false
+	for i, line := range lines {
+		if isFence(line) {
+			fenced = !fenced
+		} else if m := headingRe.FindStringSubmatch(line); m != nil && !fenced {
+			if !history || len(m[1]) <= level {
+				history = isHistoryHeading(m[2])
+				level = len(m[1])
+			}
+		}
+		mask[i] = history
+	}
+	return mask
+}
+
+func isHistoryHeading(text string) bool {
+	return strings.EqualFold(strings.TrimSpace(text), "history")
+}
+
+// Supersede replaces the current fact matching old with replacement, and
+// keeps the old fact under the note's "History" heading (added at the end if
+// missing), newest first, marked with date. An empty replacement retires the
+// fact. old must match exactly one current fact line, ignoring the list
+// marker, case, spacing and trailing #tags; its category may be left out.
+func Supersede(body, old, replacement, date string) (string, error) {
+	want := factKey(old)
+	if want.text == "" {
+		return "", errors.New("find_text: the fact to replace is required")
+	}
+	lines := strings.Split(strings.TrimRight(body, "\n"), "\n")
+	history := historyLines(lines)
+	var matches []int
+	fenced := false
+	for i, line := range lines {
+		if isFence(line) {
+			fenced = !fenced
+			continue
+		}
+		if fenced || history[i] || !isListItem(strings.TrimSpace(line)) {
+			continue
+		}
+		if have := factKey(line); have.matches(want) {
+			matches = append(matches, i)
+		}
+	}
+	switch len(matches) {
+	case 0:
+		msg := fmt.Sprintf("no current fact matches %q", strings.TrimSpace(old))
+		if obs := CurrentObservations(body); len(obs) > 0 {
+			var list []string
+			for _, o := range obs[:min(len(obs), 15)] {
+				list = append(list, fmt.Sprintf("- [%s] %s", o.Category, o.Text))
+			}
+			msg += "; the note's current facts:\n" + strings.Join(list, "\n")
+		}
+		return "", errors.New(msg)
+	case 1:
+	default:
+		return "", fmt.Errorf("%d current facts match %q; quote more of the one to replace", len(matches), strings.TrimSpace(old))
+	}
+
+	i := matches[0]
+	oldLine := lines[i]
+	indent := oldLine[:len(oldLine)-len(strings.TrimLeft(oldLine, " \t"))]
+	marker := strings.TrimSpace(oldLine)[:2] // "- " or "* "
+	var out []string
+	out = append(out, lines[:i]...)
+	if r := strings.Trim(replacement, "\n"); strings.TrimSpace(r) != "" {
+		for _, l := range strings.Split(r, "\n") {
+			if t := strings.TrimSpace(l); t != "" && !isListItem(t) {
+				l = marker + t
+			}
+			out = append(out, indent+strings.TrimLeft(l, " \t"))
+		}
+	}
+	out = append(out, lines[i+1:]...)
+
+	verb := "replaced"
+	if strings.TrimSpace(replacement) == "" {
+		verb = "removed"
+	}
+	entry := "- " + strings.TrimSpace(strings.TrimSpace(oldLine)[2:]) + " (" + verb + " " + date + ")"
+	return addToHistory(out, entry), nil
+}
+
+// addToHistory puts entry first under the History heading, or adds the
+// heading at the end.
+func addToHistory(lines []string, entry string) string {
+	fenced := false
+	for i, line := range lines {
+		if isFence(line) {
+			fenced = !fenced
+			continue
+		}
+		if m := headingRe.FindStringSubmatch(line); m != nil && !fenced && isHistoryHeading(m[2]) {
+			at := i + 1
+			for at < len(lines) && strings.TrimSpace(lines[at]) == "" {
+				at++
+			}
+			out := append([]string{}, lines[:i+1]...)
+			out = append(out, "", entry)
+			if at < len(lines) {
+				if !isListItem(strings.TrimSpace(lines[at])) {
+					out = append(out, "")
+				}
+				out = append(out, lines[at:]...)
+			}
+			return strings.Join(out, "\n") + "\n"
+		}
+	}
+	body := strings.TrimRight(strings.Join(lines, "\n"), "\n")
+	if strings.TrimSpace(body) != "" {
+		body += "\n\n"
+	}
+	return body + "## History\n\n" + entry + "\n"
+}
+
+func isListItem(line string) bool {
+	return strings.HasPrefix(line, "- ") || strings.HasPrefix(line, "* ")
+}
+
+var (
+	trailingTagsRe = regexp.MustCompile(`(?:\s+#\pL[\pL\pN_/-]*)+$`)
+	categoryRe     = regexp.MustCompile(`^\[([^\[\]]+)\]\s*`)
+)
+
+// fact is a fact line reduced for matching: lower case, single spaces,
+// without list marker, category or trailing #tags.
+type fact struct{ category, text string }
+
+func factKey(line string) fact {
+	s := strings.TrimSpace(line)
+	if isListItem(s) {
+		s = strings.TrimSpace(s[2:])
+	}
+	var f fact
+	if m := categoryRe.FindStringSubmatch(s); m != nil {
+		f.category = strings.ToLower(strings.TrimSpace(m[1]))
+		s = s[len(m[0]):]
+	}
+	s = trailingTagsRe.ReplaceAllString(s, "")
+	f.text = strings.ToLower(strings.Join(strings.Fields(s), " "))
+	return f
+}
+
+func (f fact) matches(want fact) bool {
+	return f.text == want.text && (want.category == "" || f.category == want.category)
+}
+
+var factStopWords = map[string]bool{
+	"the": true, "and": true, "for": true, "with": true, "from": true, "into": true, "that": true, "this": true,
+	"not": true, "use": true, "uses": true, "using": true, "are": true, "was": true, "were": true, "has": true,
+	"have": true, "its": true, "our": true, "but": true, "than": true, "then": true, "when": true, "which": true,
+	"all": true, "any": true, "can": true, "via": true, "per": true, "only": true, "now": true, "instead": true,
+}
+
+// FactWords are the words of a fact that say what it's about: lower case,
+// without its category, #tags, short words and common words, and with a
+// plural "s" dropped.
+func FactWords(text string) []string {
+	f := factKey(text)
+	seen := map[string]bool{}
+	var words []string
+	for _, w := range strings.FieldsFunc(f.text, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsNumber(r) }) {
+		if len([]rune(w)) > 3 && strings.HasSuffix(w, "s") && !strings.HasSuffix(w, "ss") {
+			w = strings.TrimSuffix(w, "s")
+		}
+		if len([]rune(w)) < 3 || factStopWords[w] || seen[w] {
+			continue
+		}
+		seen[w] = true
+		words = append(words, w)
+	}
+	return words
+}
+
+// FactOverlap is how much two facts are about the same thing, from 0 to 1:
+// the share of the shorter one's words that the other has too. It's 0 when
+// they share fewer than two words, unless one has only one or two words.
+func FactOverlap(a, b []string) float64 {
+	if len(a) == 0 || len(b) == 0 {
+		return 0
+	}
+	in := map[string]bool{}
+	for _, w := range a {
+		in[w] = true
+	}
+	shared := 0
+	for _, w := range b {
+		if in[w] {
+			shared++
+		}
+	}
+	shorter := min(len(a), len(b))
+	if shared < 2 && !(shared == 1 && shorter <= 2) {
+		return 0
+	}
+	return float64(shared) / float64(shorter)
 }
 
 // InlineTags returns the #tags written in body, normalized like frontmatter

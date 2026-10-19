@@ -6,6 +6,7 @@ import {
 	type Note,
 	format,
 	inlineTags,
+	splitHistory,
 	linkTarget,
 	links,
 	normalizeTags,
@@ -16,7 +17,7 @@ import {
 } from "../engine/notes";
 import { dot, hash, passages } from "./embed";
 
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -36,16 +37,19 @@ CREATE TABLE IF NOT EXISTS notes (
 CREATE INDEX IF NOT EXISTS notes_slug ON notes (slug);
 CREATE INDEX IF NOT EXISTS notes_title_slug ON notes (title_slug);
 CREATE INDEX IF NOT EXISTS notes_updated ON notes (updated);
-CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(title, tags, body, tokenize = 'porter unicode61');
+-- body is the note without its History sections, which go in history.
+CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(title, tags, body, history, tokenize = 'porter unicode61');
 CREATE TABLE IF NOT EXISTS links (source_id INTEGER NOT NULL, target TEXT NOT NULL, target_path TEXT NOT NULL, target_slug TEXT NOT NULL, relation TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS links_source ON links (source_id);
 CREATE INDEX IF NOT EXISTS links_slug ON links (target_slug);
 CREATE TABLE IF NOT EXISTS note_tags (note_id INTEGER NOT NULL, tag TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS note_tags_tag ON note_tags (tag, note_id);
-CREATE TABLE IF NOT EXISTS observations (note_id INTEGER NOT NULL, category TEXT NOT NULL, text TEXT NOT NULL);
+-- current is 0 for facts kept under a History heading.
+CREATE TABLE IF NOT EXISTS observations (note_id INTEGER NOT NULL, category TEXT NOT NULL, text TEXT NOT NULL, current INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS observations_category ON observations (category, note_id);
--- Passages for semantic search; vec is NULL until embedded.
-CREATE TABLE IF NOT EXISTS chunks (id INTEGER PRIMARY KEY, note_id INTEGER NOT NULL, text TEXT NOT NULL, hash INTEGER NOT NULL, vec BLOB);
+-- Passages for semantic search; vec is NULL until embedded. history is 1 for
+-- passages from History sections.
+CREATE TABLE IF NOT EXISTS chunks (id INTEGER PRIMARY KEY, note_id INTEGER NOT NULL, text TEXT NOT NULL, hash INTEGER NOT NULL, vec BLOB, history INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS chunks_note ON chunks (note_id);
 `;
 
@@ -61,6 +65,7 @@ export interface Hit {
 	pinned: boolean;
 	snippet: string;
 	observations?: string[];
+	history?: boolean; // matched only in the note's History, with Query.includeHistory
 }
 
 export interface LinkHit extends Hit {
@@ -78,7 +83,24 @@ export interface Query {
 	// "hybrid" (the default) ranks by keywords and meaning together when the
 	// workspace has embeddings; "keyword" and "semantic" use one of them.
 	mode?: "hybrid" | "keyword" | "semantic";
+	// Also match facts kept under History headings, which are otherwise left
+	// out; notes matched only there come last.
+	includeHistory?: boolean;
 }
+
+// A current fact and the note it's in.
+export interface Fact {
+	path: string;
+	title: string;
+	category: string;
+	text: string;
+}
+
+type Part = "current" | "history";
+const COLUMNS: Record<Part, { filter: string; snippet: number }> = {
+	current: { filter: "{title tags body}", snippet: 2 },
+	history: { filter: "history", snippet: 3 },
+};
 
 // A change an AI app made, waiting for the user's review. One per note:
 // later changes to the same note extend it.
@@ -235,17 +257,21 @@ export class Store {
 					.one().id,
 			);
 		}
-		this.sql.exec(`INSERT INTO notes_fts (rowid, title, tags, body) VALUES (?, ?, ?, ?)`, id, n.title, tags, n.body);
+		const { current, history } = splitHistory(n.body);
+		this.sql.exec(`INSERT INTO notes_fts (rowid, title, tags, body, history) VALUES (?, ?, ?, ?, ?)`, id, n.title, tags, current, history);
 		for (const l of links(n.body)) {
 			const t = linkTarget(l.target);
 			this.sql.exec(`INSERT INTO links (source_id, target, target_path, target_slug, relation) VALUES (?, ?, ?, ?, ?)`, id, l.target, t.notePath, t.slug, l.relation);
 		}
 		for (const t of allTags) this.sql.exec(`INSERT INTO note_tags (note_id, tag) VALUES (?, ?)`, id, t);
-		for (const o of observations(n.body)) this.sql.exec(`INSERT INTO observations (note_id, category, text) VALUES (?, ?, ?)`, id, o.category, o.text);
-		for (const text of passages(n)) {
-			const h = hash(text);
-			this.sql.exec(`INSERT INTO chunks (note_id, text, hash, vec) VALUES (?, ?, ?, ?)`, id, text, h, kept.get(h) ?? null);
-		}
+		for (const [part, isCurrent] of [[current, 1], [history, 0]] as const)
+			for (const o of observations(part)) this.sql.exec(`INSERT INTO observations (note_id, category, text, current) VALUES (?, ?, ?, ?)`, id, o.category, o.text, isCurrent);
+		const parts = [{ body: current, history: 0 }, ...(history.trim() ? [{ body: history, history: 1 }] : [])];
+		for (const part of parts)
+			for (const text of passages({ ...n, body: part.body })) {
+				const h = hash(text);
+				this.sql.exec(`INSERT INTO chunks (note_id, text, hash, vec, history) VALUES (?, ?, ?, ?, ?)`, id, text, h, kept.get(h) ?? null, part.history);
+			}
 		this.vectors = null;
 	}
 
@@ -269,13 +295,13 @@ export class Store {
 	// ---- embeddings ----------------------------------------------------------
 
 	// Every embedded passage, loaded once and kept until notes change.
-	private vectors: { noteId: number; chunkId: number; vec: Float32Array }[] | null = null;
+	private vectors: { noteId: number; chunkId: number; history: boolean; vec: Float32Array }[] | null = null;
 
 	private loadVectors() {
 		this.vectors ??= this.sql
-			.exec(`SELECT id, note_id, vec FROM chunks WHERE vec IS NOT NULL`)
+			.exec(`SELECT id, note_id, history, vec FROM chunks WHERE vec IS NOT NULL`)
 			.toArray()
-			.map((r) => ({ chunkId: Number(r.id), noteId: Number(r.note_id), vec: new Float32Array(r.vec as ArrayBuffer) }));
+			.map((r) => ({ chunkId: Number(r.id), noteId: Number(r.note_id), history: Number(r.history) === 1, vec: new Float32Array(r.vec as ArrayBuffer) }));
 		return this.vectors;
 	}
 
@@ -314,12 +340,12 @@ export class Store {
 	}
 
 	// semantic ranks notes by their closest passage to the query vector.
-	private semantic(vec: Float32Array, q: Query, limit: number, minScore: number, excludeId?: number): (Hit & { score: number })[] {
+	private semantic(vec: Float32Array, q: Query, limit: number, minScore: number, excludeId?: number, part: Part = "current"): (Hit & { score: number })[] {
 		const [filter, args] = filterSQL(q);
 		const allowed = filter ? new Set(this.sql.exec(`SELECT n.id FROM notes n WHERE 1 = 1${filter}`, ...args).toArray().map((r) => Number(r.id))) : null;
 		const best = new Map<number, { score: number; chunkId: number }>();
 		for (const v of this.loadVectors()) {
-			if ((allowed && !allowed.has(v.noteId)) || v.noteId === excludeId) continue;
+			if ((allowed && !allowed.has(v.noteId)) || v.noteId === excludeId || v.history !== (part === "history")) continue;
 			if (v.vec.length !== vec.length) continue;
 			const score = dot(v.vec, vec);
 			if (score < minScore) continue;
@@ -371,12 +397,38 @@ export class Store {
 	// comes first, one ranked well by both comes before it.
 	search(q: Query, vec?: { vec: Float32Array; minScore: number }): Hit[] {
 		const limit = q.limit && q.limit > 0 ? Math.min(q.limit, 100) : 10;
+		let hits = this.searchPart(q, limit, "current", vec);
+		if (q.includeHistory && hits.length < limit && ftsTerms(q.text ?? "").length > 0) {
+			const seen = new Set(hits.map((h) => h.path));
+			for (const h of this.searchPart(q, limit, "history", vec)) {
+				if (hits.length >= limit) break;
+				if (!seen.has(h.path)) hits.push({ ...h, history: true });
+			}
+		}
+		const category = q.category?.trim().toLowerCase();
+		if (category) {
+			for (const h of hits) {
+				h.observations = this.sql
+					.exec(
+						`SELECT o.text FROM observations o JOIN notes n ON n.id = o.note_id WHERE n.path = ? AND o.category = ? AND (o.current OR ?) ORDER BY o.rowid`,
+						h.path, category, q.includeHistory ? 1 : 0,
+					)
+					.toArray()
+					.map((r) => String(r.text));
+			}
+		}
+		return hits;
+	}
+
+	// searchPart searches the notes without their History sections, or only
+	// those sections.
+	private searchPart(q: Query, limit: number, part: Part, vec?: { vec: Float32Array; minScore: number }): Hit[] {
 		const [filter, args] = filterSQL(q);
 		const terms = ftsTerms(q.text ?? "");
 		let hits: Hit[];
 		if (vec && terms.length > 0) {
-			const keyword = q.mode === "semantic" ? [] : this.keyword(terms, filter, args, limit * 2);
-			const semantic = this.semantic(vec.vec, q, limit * 2, vec.minScore);
+			const keyword = q.mode === "semantic" ? [] : this.keyword(terms, part, filter, args, limit * 2);
+			const semantic = this.semantic(vec.vec, q, limit * 2, vec.minScore, undefined, part);
 			const score = new Map<string, number>();
 			const byPath = new Map<string, Hit>();
 			const K = 60;
@@ -392,26 +444,17 @@ export class Store {
 		} else if (terms.length === 0) {
 			hits = this.query(`SELECT ${HIT_COLUMNS}, '' AS snippet FROM notes n WHERE 1 = 1${filter} ORDER BY n.updated DESC LIMIT ?`, ...args, limit);
 		} else {
-			hits = this.keyword(terms, filter, args, limit);
-		}
-		const category = q.category?.trim().toLowerCase();
-		if (category) {
-			for (const h of hits) {
-				h.observations = this.sql
-					.exec(`SELECT o.text FROM observations o JOIN notes n ON n.id = o.note_id WHERE n.path = ? AND o.category = ? ORDER BY o.rowid`, h.path, category)
-					.toArray()
-					.map((r) => String(r.text));
-			}
+			hits = this.keyword(terms, part, filter, args, limit);
 		}
 		return hits;
 	}
 
 	// keyword: notes with every word first, then notes with some words.
-	private keyword(terms: string[], filter: string, args: SqlStorageValue[], limit: number): Hit[] {
-		const hits = this.fts(terms.join(" "), filter, args, limit);
+	private keyword(terms: string[], part: Part, filter: string, args: SqlStorageValue[], limit: number): Hit[] {
+		const hits = this.fts(terms.join(" "), part, filter, args, limit);
 		if (terms.length > 1 && hits.length < limit) {
 			const seen = new Set(hits.map((h) => h.path));
-			for (const h of this.fts(terms.join(" OR "), filter, args, limit)) {
+			for (const h of this.fts(terms.join(" OR "), part, filter, args, limit)) {
 				if (hits.length >= limit) break;
 				if (!seen.has(h.path)) hits.push(h);
 			}
@@ -419,16 +462,33 @@ export class Store {
 		return hits;
 	}
 
-	private fts(match: string, filter: string, args: SqlStorageValue[], limit: number): Hit[] {
+	private fts(match: string, part: Part, filter: string, args: SqlStorageValue[], limit: number): Hit[] {
+		const cols = COLUMNS[part];
 		// 30 days in ms: recent notes score up to 1.3x, fading over months.
 		return this.query(
-			`SELECT ${HIT_COLUMNS}, snippet(notes_fts, 2, '**', '**', '…', 16) AS snippet
+			`SELECT ${HIT_COLUMNS}, snippet(notes_fts, ${cols.snippet}, '**', '**', '…', 16) AS snippet
 			 FROM notes_fts JOIN notes n ON n.id = notes_fts.rowid
 			 WHERE notes_fts MATCH ?${filter}
-			 ORDER BY bm25(notes_fts, 10.0, 5.0, 1.0) * (1.0 + 0.3 / (1.0 + (? - n.updated) / 2592000000.0))
+			 ORDER BY bm25(notes_fts, 10.0, 5.0, 1.0, 1.0) * (1.0 + 0.3 / (1.0 + (? - n.updated) / 2592000000.0))
 			 LIMIT ?`,
-			match, ...args, Date.now(), limit,
+			`${cols.filter} : (${match})`, ...args, Date.now(), limit,
 		);
+	}
+
+	// currentFacts returns the current observations in category ("" for any)
+	// of the notes under any of dirs ("" for the top level).
+	currentFacts(category: string, dirs: string[]): Fact[] {
+		if (!dirs.length) return [];
+		const c = category.trim().toLowerCase();
+		const where = dirs.map((d) => (d === "" ? `n.path NOT LIKE '%/%'` : `n.path LIKE ? || '/%'`)).join(" OR ");
+		return this.sql
+			.exec(
+				`SELECT n.path, n.title, o.category, o.text FROM observations o JOIN notes n ON n.id = o.note_id
+				 WHERE o.current AND (? = '' OR o.category = ?) AND (${where}) ORDER BY n.updated DESC, o.rowid`,
+				c, c, ...dirs.filter((d) => d !== ""),
+			)
+			.toArray()
+			.map((r) => ({ path: String(r.path), title: String(r.title), category: String(r.category), text: String(r.text) }));
 	}
 
 	recent(limit: number): Hit[] {
@@ -528,8 +588,8 @@ function filterSQL(q: Query): [string, SqlStorageValue[]] {
 	}
 	const c = q.category?.trim().toLowerCase();
 	if (c) {
-		sql += ` AND EXISTS (SELECT 1 FROM observations o WHERE o.note_id = n.id AND o.category = ?)`;
-		args.push(c);
+		sql += ` AND EXISTS (SELECT 1 FROM observations o WHERE o.note_id = n.id AND o.category = ? AND (o.current OR ?))`;
+		args.push(c, q.includeHistory ? 1 : 0);
 	}
 	if (q.since) {
 		sql += ` AND n.updated >= ?`;

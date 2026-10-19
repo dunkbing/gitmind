@@ -207,7 +207,7 @@ func serve(ctx context.Context, dir string, interval time.Duration) error {
 
 // cloudSearch returns semantic search through gitmind cloud when the notes
 // repository syncs with a cloud workspace this machine is signed in to.
-func cloudSearch(ctx context.Context, dir string) func(ctx context.Context, query, directory string, tags []string, category, since, before string, limit int, mode string) ([]index.Hit, error) {
+func cloudSearch(ctx context.Context, dir string) server.RemoteSearch {
 	c, err := cloud.Load()
 	if err != nil || c.GitURL == "" || c.Workspace == "" {
 		return nil
@@ -216,14 +216,17 @@ func cloudSearch(ctx context.Context, dir string) func(ctx context.Context, quer
 	if trim((&gitsync.Repo{Dir: dir}).Remote(ctx)) != trim(c.GitURL) {
 		return nil
 	}
-	return func(ctx context.Context, query, directory string, tags []string, category, since, before string, limit int, mode string) ([]index.Hit, error) {
-		hits, err := c.Search(ctx, c.Workspace, cloud.SearchArgs{Query: query, Directory: directory, Tags: tags, Category: category, Since: since, Before: before, Limit: limit, Mode: mode})
+	return func(ctx context.Context, in server.SearchArgs) ([]index.Hit, error) {
+		hits, err := c.Search(ctx, c.Workspace, cloud.SearchArgs{
+			Query: in.Query, Directory: in.Directory, Tags: in.Tags, Category: in.Category, Since: in.Since,
+			Before: in.Before, Limit: in.Limit, Mode: in.Mode, IncludeHistory: in.IncludeHistory,
+		})
 		if err != nil {
 			return nil, err
 		}
 		out := make([]index.Hit, len(hits))
 		for i, h := range hits {
-			out[i] = index.Hit{Path: h.Path, Title: h.Title, Tags: h.Tags, Modified: time.UnixMilli(h.Updated), Summary: h.Summary, Snippet: h.Snippet, Pinned: h.Pinned, Observations: h.Observations}
+			out[i] = index.Hit{Path: h.Path, Title: h.Title, Tags: h.Tags, Modified: time.UnixMilli(h.Updated), Summary: h.Summary, Snippet: h.Snippet, Pinned: h.Pinned, Observations: h.Observations, History: h.History}
 		}
 		return out, nil
 	}

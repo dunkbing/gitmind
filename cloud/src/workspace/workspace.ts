@@ -5,7 +5,11 @@
 import { DurableObject } from "cloudflare:workers";
 import {
 	type Note,
+	type Observation,
 	cleanDir,
+	currentObservations,
+	factOverlap,
+	factWords,
 	format,
 	linkTarget,
 	normalizeTags,
@@ -15,6 +19,7 @@ import {
 	replaceSection,
 	rewriteLinks,
 	slugify,
+	supersede,
 	validPath,
 } from "../engine/notes";
 import { checkSecrets } from "../engine/secrets";
@@ -22,7 +27,7 @@ import { ConflictError, type FileChange, Session } from "../repo/git";
 import { remoteFor, repoProvider } from "../repo/provider";
 import { type ProfileFact, buildContext, profile, sessionContext } from "./context";
 import { type Embedder, embedderFor } from "./embed";
-import { type Hit, type InboxItem, type Query, Store } from "./store";
+import { type Fact, type Hit, type InboxItem, type Query, Store } from "./store";
 
 export interface Actor {
 	login: string;
@@ -55,7 +60,7 @@ export interface WriteArgs {
 
 export interface EditArgs {
 	identifier: string;
-	operation: "append" | "prepend" | "find_replace" | "replace_section";
+	operation: "append" | "prepend" | "find_replace" | "replace_section" | "supersede";
 	content: string;
 	findText?: string;
 	expectedReplacements?: number;
@@ -66,6 +71,21 @@ export interface WriteResult {
 	path: string;
 	created: boolean;
 	similar: Hit[];
+	conflicts: Conflict[];
+}
+
+export interface EditResult {
+	path: string;
+	addedSection: boolean;
+	conflicts: Conflict[];
+}
+
+// A current fact that may say the same thing as a newly saved one, or that
+// the new one may replace.
+export interface Conflict {
+	fact: Observation; // the new fact
+	with: Fact; // the existing one
+	same: boolean; // they say exactly the same thing
 }
 
 // The note that collects reasons for rejected changes.
@@ -260,15 +280,19 @@ export class Workspace extends DurableObject<Env> {
 			return { changes: [{ path, content: format(n) }], message: `${old ? "update" : "add"} ${path}`, result: !old };
 		});
 		const n = this.store.read(path)!.note;
-		return { path, created: result, similar: result ? this.store.similar(path, n.title, n.tags, 3) : [] };
+		return {
+			path, created: result, similar: result ? this.store.similar(path, n.title, n.tags, 3) : [],
+			conflicts: this.conflicts(path, currentObservations(a.content)),
+		};
 	}
 
-	async edit(a: EditArgs, actor: Actor): Promise<{ path: string; addedSection: boolean }> {
+	async edit(a: EditArgs, actor: Actor): Promise<EditResult> {
 		checkSecrets(a.content, a.section ?? "");
-		return this.mutate(actor, () => {
+		const r = await this.mutate(actor, () => {
 			const path = this.resolve(a.identifier);
 			const n = this.store.read(path)!.note;
 			if (n.locked) throw lockedError(path);
+			const before = n.body;
 			let addedSection = false;
 			switch (a.operation) {
 				case "append":
@@ -293,11 +317,49 @@ export class Workspace extends DurableObject<Env> {
 					addedSection = r.added;
 					break;
 				}
+				case "supersede":
+					try {
+						n.body = supersede(n.body, a.findText ?? "", a.content, new Date().toISOString().slice(0, 10));
+					} catch (e) {
+						throw new Error(`${path}: ${(e as Error).message}`);
+					}
+					break;
 				default:
-					throw new Error(`unknown operation "${a.operation}" (use append, prepend, find_replace or replace_section)`);
+					throw new Error(`unknown operation "${a.operation}" (use append, prepend, find_replace, replace_section or supersede)`);
 			}
-			return { changes: [{ path, content: format(n) }], message: `edit ${path}`, result: { path, addedSection } };
+			const added = newFacts(before, n.body);
+			return { changes: [{ path, content: format(n) }], message: `edit ${path}`, result: { path, addedSection, added } };
 		});
+		return { path: r.path, addedSection: r.addedSection, conflicts: this.conflicts(r.path, r.added) };
+	}
+
+	// conflicts finds current facts of the same category, in the note's
+	// project directory and general/, that are about the same thing as facts
+	// just saved to the note at path: at most two per fact and five in all.
+	conflicts(path: string, facts: Observation[]): Conflict[] {
+		const i = path.indexOf("/");
+		const dirs = ["general"];
+		if (i < 0) dirs.push("");
+		else if (path.slice(0, i) !== "general") dirs.push(path.slice(0, i));
+		const saved = new Set(facts.map((f) => f.category + "\0" + f.text));
+		const byCategory = new Map<string, Fact[]>();
+		const out: Conflict[] = [];
+		for (const f of facts) {
+			let existing = byCategory.get(f.category);
+			if (!existing) byCategory.set(f.category, (existing = this.store.currentFacts(f.category, dirs)));
+			const words = factWords(f.text);
+			const found: (Conflict & { score: number })[] = [];
+			for (const e of existing) {
+				if (e.path === path && saved.has(e.category + "\0" + e.text)) continue; // the new fact itself, or another one just saved
+				const score = factOverlap(words, factWords(e.text));
+				if (score < 0.5) continue;
+				const norm = (t: string) => t.split(/\s+/).filter(Boolean).join(" ").toLowerCase();
+				found.push({ fact: f, with: e, same: norm(f.text) === norm(e.text), score });
+			}
+			found.sort((x, y) => y.score - x.score);
+			out.push(...found.slice(0, 2).map(({ score: _, ...c }) => c));
+		}
+		return out.slice(0, 5);
 	}
 
 	async delete(id: string, actor: Actor): Promise<string> {
@@ -635,6 +697,12 @@ export class Workspace extends DurableObject<Env> {
 // format "memory: add x.md (laptop, Claude Code)" (or "(laptop)" from older
 // CLIs); null for commits that aren't an agent's change (the user's edits,
 // syncs, and the cloud's own commits).
+// newFacts returns the current facts in after that weren't in before.
+export function newFacts(before: string, after: string): Observation[] {
+	const had = new Set(currentObservations(before).map((o) => o.category + "\0" + o.text));
+	return currentObservations(after).filter((o) => !had.has(o.category + "\0" + o.text));
+}
+
 export function pushSource(message: string): string | null {
 	if (!message.startsWith("memory:")) return null;
 	const m = /\(([^()]*)\)\s*$/.exec(message.split("\n")[0]);

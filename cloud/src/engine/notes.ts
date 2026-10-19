@@ -272,21 +272,159 @@ export function observations(body: string): Observation[] {
 // currentObservations is observations without those under a "History"
 // heading, where replaced facts are kept for the record.
 export function currentObservations(body: string): Observation[] {
-	const out: Observation[] = [];
+	return observations(splitHistory(body).current);
+}
+
+// splitHistory separates the parts of body under a "History" heading (any
+// level, with its subsections), where replaced facts are kept, from the rest.
+export function splitHistory(body: string): { current: string; history: string } {
+	const lines = body.split("\n");
+	const mask = historyLines(lines);
+	return {
+		current: lines.filter((_, i) => !mask[i]).join("\n"),
+		history: lines.filter((_, i) => mask[i]).join("\n"),
+	};
+}
+
+// historyLines marks the lines of History sections, headings included.
+function historyLines(lines: string[]): boolean[] {
 	let history = false;
-	let historyLevel = 0;
-	for (const line of unfencedLines(body)) {
-		const h = /^(#{1,6})\s+(.+?)(?:\s+#+)?\s*$/.exec(line);
-		if (h) {
-			const level = h[1].length;
-			if (history && level > historyLevel) continue; // a subsection of History
-			history = h[2].trim().toLowerCase() === "history";
-			historyLevel = level;
+	let level = 0;
+	let fenced = false;
+	return lines.map((line) => {
+		const m = headingRe.exec(line);
+		if (isFence(line)) fenced = !fenced;
+		else if (m && !fenced && (!history || m[1].length <= level)) {
+			history = isHistoryHeading(m[2]);
+			level = m[1].length;
+		}
+		return history;
+	});
+}
+
+const isHistoryHeading = (text: string) => text.trim().toLowerCase() === "history";
+const isListItem = (line: string) => line.startsWith("- ") || line.startsWith("* ");
+
+// supersede replaces the current fact matching old with replacement, and
+// keeps the old fact under the note's "History" heading (added at the end if
+// missing), newest first, marked with date. An empty replacement retires the
+// fact. old must match exactly one current fact line, ignoring the list
+// marker, case, spacing and trailing #tags; its category may be left out.
+export function supersede(body: string, old: string, replacement: string, date: string): string {
+	const want = factKey(old);
+	if (want.text === "") throw new Error("find_text: the fact to replace is required");
+	const lines = body.replace(/\n+$/, "").split("\n");
+	const history = historyLines(lines);
+	const matches: number[] = [];
+	let fenced = false;
+	lines.forEach((line, i) => {
+		if (isFence(line)) {
+			fenced = !fenced;
+			return;
+		}
+		if (fenced || history[i] || !isListItem(line.trim())) return;
+		if (factMatches(factKey(line), want)) matches.push(i);
+	});
+	if (matches.length === 0) {
+		let msg = `no current fact matches "${old.trim()}"`;
+		const obs = currentObservations(body);
+		if (obs.length) msg += "; the note's current facts:\n" + obs.slice(0, 15).map((o) => `- [${o.category}] ${o.text}`).join("\n");
+		throw new Error(msg);
+	}
+	if (matches.length > 1) throw new Error(`${matches.length} current facts match "${old.trim()}"; quote more of the one to replace`);
+
+	const i = matches[0];
+	const oldLine = lines[i];
+	const indent = oldLine.slice(0, oldLine.length - oldLine.replace(/^[ \t]+/, "").length);
+	const marker = oldLine.trim().slice(0, 2);
+	const out = lines.slice(0, i);
+	const r = replacement.replace(/^\n+|\n+$/g, "");
+	if (r.trim() !== "") {
+		for (let l of r.split("\n")) {
+			const t = l.trim();
+			if (t !== "" && !isListItem(t)) l = marker + t;
+			out.push(indent + l.replace(/^[ \t]+/, ""));
+		}
+	}
+	out.push(...lines.slice(i + 1));
+	const verb = replacement.trim() === "" ? "removed" : "replaced";
+	return addToHistory(out, `- ${oldLine.trim().slice(2).trim()} (${verb} ${date})`);
+}
+
+// addToHistory puts entry first under the History heading, or adds the
+// heading at the end.
+function addToHistory(lines: string[], entry: string): string {
+	let fenced = false;
+	for (let i = 0; i < lines.length; i++) {
+		if (isFence(lines[i])) {
+			fenced = !fenced;
 			continue;
 		}
-		if (!history) out.push(...observations(line));
+		const m = headingRe.exec(lines[i]);
+		if (!m || fenced || !isHistoryHeading(m[2])) continue;
+		let at = i + 1;
+		while (at < lines.length && lines[at].trim() === "") at++;
+		const out = [...lines.slice(0, i + 1), "", entry];
+		if (at < lines.length) {
+			if (!isListItem(lines[at].trim())) out.push("");
+			out.push(...lines.slice(at));
+		}
+		return out.join("\n") + "\n";
 	}
-	return out;
+	let body = lines.join("\n").replace(/\n+$/, "");
+	if (body.trim() !== "") body += "\n\n";
+	return body + "## History\n\n" + entry + "\n";
+}
+
+const trailingTagsRe = /(?:\s+#\p{L}[\p{L}\p{N}_/-]*)+$/u;
+const categoryRe = /^\[([^[\]]+)\]\s*/;
+
+// factKey reduces a fact line for matching: lower case, single spaces,
+// without list marker, category or trailing #tags.
+function factKey(line: string): { category: string; text: string } {
+	let s = line.trim();
+	if (isListItem(s)) s = s.slice(2).trim();
+	let category = "";
+	const m = categoryRe.exec(s);
+	if (m) {
+		category = m[1].trim().toLowerCase();
+		s = s.slice(m[0].length);
+	}
+	s = s.replace(trailingTagsRe, "");
+	return { category, text: s.split(/\s+/).filter(Boolean).join(" ").toLowerCase() };
+}
+
+const factMatches = (f: { category: string; text: string }, want: { category: string; text: string }) =>
+	f.text === want.text && (want.category === "" || f.category === want.category);
+
+const FACT_STOP_WORDS = new Set([
+	"the", "and", "for", "with", "from", "into", "that", "this", "not", "use", "uses", "using", "are", "was", "were", "has",
+	"have", "its", "our", "but", "than", "then", "when", "which", "all", "any", "can", "via", "per", "only", "now", "instead",
+]);
+
+// factWords are the words of a fact that say what it's about: lower case,
+// without its category, #tags, short words and common words, and with a
+// plural "s" dropped.
+export function factWords(text: string): string[] {
+	const words: string[] = [];
+	for (let w of factKey(text).text.split(/[^\p{L}\p{N}]+/u)) {
+		if ([...w].length > 3 && w.endsWith("s") && !w.endsWith("ss")) w = w.slice(0, -1);
+		if ([...w].length < 3 || FACT_STOP_WORDS.has(w) || words.includes(w)) continue;
+		words.push(w);
+	}
+	return words;
+}
+
+// factOverlap is how much two facts are about the same thing, from 0 to 1:
+// the share of the shorter one's words that the other has too. It's 0 when
+// they share fewer than two words, unless one has only one or two words.
+export function factOverlap(a: string[], b: string[]): number {
+	if (!a.length || !b.length) return 0;
+	const set = new Set(a);
+	const shared = b.filter((w) => set.has(w)).length;
+	const shorter = Math.min(a.length, b.length);
+	if (shared < 2 && !(shared === 1 && shorter <= 2)) return 0;
+	return shared / shorter;
 }
 
 export function inlineTags(body: string): string[] {

@@ -192,3 +192,80 @@ func TestExistsMatchesCaseExactly(t *testing.T) {
 		}
 	}
 }
+
+func TestSplitHistory(t *testing.T) {
+	body := "- [decision] use Qwen3 #search\n\n## History\n\n- [decision] use bge-m3 (replaced 2026-10-18)\n\n### Older\n\n- [decision] use FTS only\n\n## Next\n\n- [task] ship it\n```\n## History\n```\n"
+	current, history := SplitHistory(body)
+	if strings.Contains(current, "bge-m3") || strings.Contains(current, "FTS only") || !strings.Contains(current, "ship it") || !strings.Contains(current, "```\n## History\n```") {
+		t.Errorf("current:\n%s", current)
+	}
+	if !strings.Contains(history, "bge-m3") || !strings.Contains(history, "FTS only") || strings.Contains(history, "Qwen3") {
+		t.Errorf("history:\n%s", history)
+	}
+	var got []string
+	for _, o := range CurrentObservations(body) {
+		got = append(got, o.Text)
+	}
+	if strings.Join(got, "|") != "use Qwen3 #search|ship it" {
+		t.Errorf("CurrentObservations = %q", got)
+	}
+}
+
+func TestSupersede(t *testing.T) {
+	body := "Intro.\n\n- [decision] Use  bge-m3 embeddings #search\n  - [gotcha] slow on ARM\n- [setup] runs nightly\n"
+	got, err := Supersede(body, "use bge-m3 embeddings", "[decision] use Qwen3 embeddings #search", "2026-10-19")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "Intro.\n\n- [decision] use Qwen3 embeddings #search\n  - [gotcha] slow on ARM\n- [setup] runs nightly\n\n## History\n\n- [decision] Use  bge-m3 embeddings #search (replaced 2026-10-19)\n"
+	if got != want {
+		t.Errorf("first supersede:\n%s\nwant:\n%s", got, want)
+	}
+
+	// The next one goes first under the existing heading; the nested
+	// fact keeps its indentation; history isn't matched.
+	got, err = Supersede(got, "- [gotcha] slow on ARM", "fast since Go 1.25", "2026-10-20")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, "\n  - fast since Go 1.25\n") ||
+		!strings.HasSuffix(got, "## History\n\n- [gotcha] slow on ARM (replaced 2026-10-20)\n- [decision] Use  bge-m3 embeddings #search (replaced 2026-10-19)\n") {
+		t.Errorf("second supersede:\n%s", got)
+	}
+	if _, err := Supersede(got, "use bge-m3 embeddings", "x", "2026-10-21"); err == nil || !strings.Contains(err.Error(), "current facts") {
+		t.Errorf("superseding a fact that's only in History: err = %v", err)
+	}
+
+	// An empty replacement retires the fact.
+	got, err = Supersede(got, "[setup] runs nightly", "", "2026-10-21")
+	if err != nil || strings.Contains(strings.SplitN(got, "## History", 2)[0], "nightly") || !strings.Contains(got, "- [setup] runs nightly (removed 2026-10-21)") {
+		t.Errorf("retiring: err = %v\n%s", err, got)
+	}
+
+	// Ambiguous and wrong-category matches are refused.
+	twice := "- [task] deploy\n- [task] deploy #ops\n"
+	if _, err := Supersede(twice, "deploy", "done", "2026-10-19"); err == nil || !strings.Contains(err.Error(), "2 current facts") {
+		t.Errorf("ambiguous: err = %v", err)
+	}
+	if _, err := Supersede(twice, "[decision] deploy", "done", "2026-10-19"); err == nil {
+		t.Error("matched a fact of another category")
+	}
+}
+
+func TestFactOverlap(t *testing.T) {
+	for _, c := range []struct {
+		a, b     string
+		conflict bool
+	}{
+		{"[decision] use bge-m3 embeddings for search", "[decision] use Qwen3 embeddings, which ranked notes better than bge-m3", true},
+		{"deploys go through Cloudflare builds", "Cloudflare builds deploy on every push", true},
+		{"prefers tabs", "prefers tabs #style", true},
+		{"use bun, not npm", "deploy with wrangler", false},
+		{"the search index lives in SQLite", "the session context has a size budget", false},
+	} {
+		got := FactOverlap(FactWords(c.a), FactWords(c.b)) >= 0.5
+		if got != c.conflict {
+			t.Errorf("FactOverlap(%q, %q) = %v (%v, %v)", c.a, c.b, FactOverlap(FactWords(c.a), FactWords(c.b)), FactWords(c.a), FactWords(c.b))
+		}
+	}
+}

@@ -139,6 +139,7 @@ appApi.get("/w/:slug/search", async (c) => {
 		since: parseWhen(q.since ?? "", Date.now()),
 		limit: Math.min(100, Number(q.limit) || 30),
 		mode: q.mode === "keyword" || q.mode === "semantic" ? q.mode : "hybrid",
+		includeHistory: q.history === "1",
 	});
 	return c.json(hits);
 });

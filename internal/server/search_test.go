@@ -44,12 +44,12 @@ func TestSearchMergesRemoteMeaning(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	in := searchArgs{Query: "putting code into production"}
+	in := SearchArgs{Query: "putting code into production"}
 	q, _ := toQuery(in, time.Now())
 
 	// The server finds the deploy note by meaning, plus a note this machine
 	// has deleted (not pushed yet), which is left out.
-	remote := func(ctx context.Context, in searchArgs) ([]index.Hit, error) {
+	remote := func(ctx context.Context, in SearchArgs) ([]index.Hit, error) {
 		return []index.Hit{{Path: "ops/shipping-releases.md", Title: "Shipping releases"}, {Path: "ops/gone.md", Title: "Gone"}}, nil
 	}
 	hits, err := search(ctx, app, remote, in, q)
@@ -66,7 +66,7 @@ func TestSearchMergesRemoteMeaning(t *testing.T) {
 		t.Errorf("keyword mode found %v", paths(hits))
 	}
 	in.Mode = ""
-	failing := func(context.Context, searchArgs) ([]index.Hit, error) { return nil, errors.New("offline") }
+	failing := func(context.Context, SearchArgs) ([]index.Hit, error) { return nil, errors.New("offline") }
 	in.Query = "deploy"
 	q, _ = toQuery(in, time.Now())
 	if hits, err := search(ctx, app, failing, in, q); err != nil || len(hits) != 1 {

@@ -32,9 +32,9 @@ export async function api(request: Request, env: Env, props: AuthProps): Promise
 	if (request.method === "POST" && sm) {
 		const ws = await workspaceFor(env, user.id, decodeURIComponent(sm[1]));
 		if (!ws) return json({ error: "no such workspace, or you're not a member" }, 404);
-		const a = (await request.json()) as Parameters<typeof toQuery>[0] & { mode?: "hybrid" | "keyword" | "semantic" };
+		const a = (await request.json()) as Parameters<typeof toQuery>[0] & { mode?: "hybrid" | "keyword" | "semantic"; include_history?: boolean };
 		try {
-			return json(await workspaceStub(env, ws).search({ ...toQuery(a, Date.now()), mode: a.mode }));
+			return json(await workspaceStub(env, ws).search({ ...toQuery(a, Date.now()), mode: a.mode, includeHistory: a.include_history }));
 		} catch (e) {
 			return json({ error: (e as Error).message }, 400);
 		}

@@ -8,6 +8,7 @@ import { z } from "zod";
 import { type User, getUser, workspaceFor, workspacesFor, workspaceStub } from "./accounts";
 import { cleanDir } from "./engine/notes";
 import type { Hit, Query } from "./workspace/store";
+import type { Conflict } from "./workspace/workspace";
 
 export interface AuthProps {
 	userId: string;
@@ -23,8 +24,9 @@ A suggestion is not a decision until the user confirms it; your own output only 
 Skip one-off requests, routine steps, and anything already in the code or git history. Never store secrets.
 Write facts as "- [category] fact #tag" with categories such as decision, preference, instruction (standing rules
 like "from now on..."), gotcha, anti-pattern, setup, task (with status), artifact (with a link).
-When a fact changes, update it and keep the old version under a "## History" section with the date, rather than
-silently overwriting. Prefer editing an existing note over creating a near-duplicate. Notes marked locked are the user's.
+When a fact changes, replace it with edit_note's supersede operation, which keeps the old version under "## History" with
+the date, rather than silently overwriting it. When a save reports possibly conflicting facts, supersede the outdated one.
+Prefer editing an existing note over creating a near-duplicate. Notes marked locked are the user's.
 Every tool works on the user's personal workspace unless you pass workspace (see list_workspaces).`;
 
 const workspaceArg = z.string().optional().describe("workspace slug from list_workspaces; omit for the personal workspace");
@@ -81,12 +83,13 @@ function createServer(version: string): McpServer {
 				before: z.string().optional().describe("only notes last updated before this date (YYYY-MM-DD)"),
 				limit: z.number().int().optional().describe("maximum number of results (default 10)"),
 				mode: z.enum(["hybrid", "keyword", "semantic"]).optional().describe("hybrid (default): meaning and keywords; keyword: exact words only; semantic: meaning only"),
+				include_history: z.boolean().optional().describe("also match facts kept under History headings (replaced or removed ones), e.g. to find why something changed; notes matched only there come last, marked [history]"),
 				workspace: workspaceArg,
 			},
 		},
 		async (a) => {
 			const { stub } = await ctx(env(), a.workspace);
-			const q = { ...toQuery(a, Date.now()), mode: a.mode };
+			const q = { ...toQuery(a, Date.now()), mode: a.mode, includeHistory: a.include_history };
 			return text(formatHits("No notes match.", await stub.search(q)));
 		},
 	);
@@ -158,7 +161,7 @@ function createServer(version: string): McpServer {
 		async (a) => {
 			const { stub, actor } = await ctx(env(), a.workspace);
 			const r = await stub.write({ title: a.title, directory: a.directory, content: a.content, tags: a.tags, overwrite: a.overwrite, pinned: a.pinned }, actor);
-			let msg = `${r.created ? "Created" : "Updated"} ${r.path}`;
+			let msg = `${r.created ? "Created" : "Updated"} ${r.path}` + conflictsText(r.conflicts);
 			if (r.similar.length) {
 				msg += "\n\nPossibly overlapping notes. If the new note duplicates one of them, merge it in with edit_note and delete the new one:\n" + formatHits("", r.similar);
 			}
@@ -170,13 +173,14 @@ function createServer(version: string): McpServer {
 		"edit_note",
 		{
 			description:
-				"Edit a memory note in place: append, prepend, find_replace text, or replace_section to rewrite everything under one heading " +
-				"(added at the end if the heading doesn't exist).",
+				"Edit a memory note in place: append, prepend, find_replace text, replace_section to rewrite everything under one heading " +
+				"(added at the end if the heading doesn't exist), or supersede a fact that changed: the new fact takes its place and the old one " +
+				"moves under the note's History heading with today's date.",
 			inputSchema: {
 				identifier: z.string().describe("note path, permalink or exact title"),
-				operation: z.enum(["append", "prepend", "find_replace", "replace_section"]),
-				content: z.string().describe("text to add; the replacement for find_replace; the new content under the heading for replace_section"),
-				find_text: z.string().optional().describe("text to replace (find_replace only)"),
+				operation: z.enum(["append", "prepend", "find_replace", "replace_section", "supersede"]),
+				content: z.string().describe("text to add; the replacement for find_replace; the new content under the heading for replace_section; the new fact for supersede (empty to retire the old one)"),
+				find_text: z.string().optional().describe("find_replace: text to replace; supersede: the current fact to replace, e.g. '[decision] use bge-m3' (list marker, case and trailing #tags don't matter)"),
 				expected_replacements: z.number().int().optional().describe("fail unless find_text occurs exactly this many times"),
 				section: z.string().optional().describe("heading whose content to replace (replace_section only); its subsections are replaced too"),
 				workspace: workspaceArg,
@@ -188,7 +192,10 @@ function createServer(version: string): McpServer {
 				{ identifier: a.identifier, operation: a.operation, content: a.content, findText: a.find_text, expectedReplacements: a.expected_replacements, section: a.section },
 				actor,
 			);
-			return text(r.addedSection ? `Edited ${r.path}: no section "${a.section}" existed, so it was added at the end` : `Edited ${r.path}`);
+			let msg = `Edited ${r.path}`;
+			if (r.addedSection) msg = `Edited ${r.path}: no section "${a.section}" existed, so it was added at the end`;
+			else if (a.operation === "supersede") msg += a.content.trim() ? ": the new fact replaced the old one, which moved to History" : ": the fact moved to History";
+			return text(msg + conflictsText(r.conflicts));
 		},
 	);
 
@@ -296,12 +303,26 @@ export function parseWhen(s: string | undefined, now: number): number | undefine
 	throw new Error(`"${s}" is not a date (YYYY-MM-DD) or period (7d, 2w, 3m, 1y)`);
 }
 
+// conflictsText lists current facts that may conflict with facts just saved,
+// for the agent to supersede if they're outdated.
+export function conflictsText(conflicts: Conflict[]): string {
+	if (!conflicts.length) return "";
+	let b =
+		"\n\nPossibly conflicting facts. If an existing one is outdated, supersede it with edit_note " +
+		'(operation "supersede", find_text: the old fact); if it says the same thing, remove the duplicate. If they don\'t conflict, ignore this.\n';
+	for (const c of conflicts) {
+		b += `- new: [${c.fact.category}] ${c.fact.text}\n  existing in ${c.with.path}: [${c.with.category}] ${c.with.text}${c.same ? " (same wording)" : ""}\n`;
+	}
+	return b.replace(/\n+$/, "");
+}
+
 export function formatHits(empty: string, hits: Hit[]): string {
 	if (!hits.length) return empty;
 	let b = "";
 	for (const h of hits) {
 		b += `- ${h.title} (${h.path}, modified ${new Date(h.updated).toISOString().slice(0, 10)})`;
 		if (h.pinned) b += " [pinned]";
+		if (h.history) b += " [history]";
 		if (h.tags.length) b += ` #${h.tags.join(" #")}`;
 		b += "\n";
 		if (h.observations?.length) for (const o of h.observations) b += `  - ${o}\n`;
