@@ -18,7 +18,7 @@ const { title, description, jsonLd, type = "website", modified, markdown, noinde
 const canonical = new URL(Astro.url.pathname, Astro.site).toString();
 const fullTitle = title === "gitmind" ? "gitmind: shared memory for Claude, ChatGPT, Claude Code and Codex" : `${title} · gitmind`;
 const image = new URL("/og.png", Astro.site).toString();
-const imageAlt = "gitmind: one memory for every AI you work with. Markdown notes in a git repository you own, shared over MCP.";
+const imageAlt = "gitmind: your AI agents stop forgetting. One memory shared by Claude, ChatGPT, Claude Code and Codex, as Markdown notes in a git repository you own.";
 ---
 <!doctype html>
 <html lang="en">

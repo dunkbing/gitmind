@@ -1,8 +1,33 @@
 # gitmind
 
-Persistent memory for coding agents (Claude Code, Codex, anything that speaks
-MCP), stored as Markdown notes in a git repository and synced between machines
-through a remote such as a private GitHub repo.
+**Your AI agents stop forgetting.** One memory shared by Claude, ChatGPT,
+Claude Code and Codex.
+
+Every new agent session starts from zero, so you re-explain your stack, your
+preferences and the bug you already fixed. gitmind gives all your AI apps one
+memory: agents save what they learn as they work (decisions, preferences,
+gotchas, how things are set up) and recall it at the start of the next
+session, in whichever app you use.
+
+- **Works in every AI app**: one MCP endpoint for claude.ai, ChatGPT, Claude
+  Code and Codex, on every device. What one app learns, the others know.
+- **Automatic**: in Claude Code, notes load when a session starts and the agent
+  is reminded to save before it stops. Nothing to approve.
+- **Facts stay current**: a changed fact moves to a dated History instead of
+  contradicting the new one, and agents are warned when they save a conflict.
+- **Yours, in git**: plain Markdown notes in a git repository you own. Read
+  them in Obsidian, edit them, take them with you.
+- **Open source** (AGPL-3.0): use [gitmind.app](https://gitmind.app),
+  self-host it on Cloudflare, or sync through a private GitHub repo.
+
+## Get started
+
+- **claude.ai or ChatGPT**: add `https://gitmind.app/mcp` as a custom
+  connector ([how](https://gitmind.app/docs/connect/)).
+- **Claude Code and Codex**: install the CLI and run `gitmind setup`, which
+  also installs the Claude Code plugin (see [Install](#install)).
+
+## How the CLI works
 
 Each machine runs `gitmind` as a local stdio MCP server. There is no central
 server: your agents keep using their normal logins (including Claude Max), and

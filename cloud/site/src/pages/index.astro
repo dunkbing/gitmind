@@ -3,13 +3,13 @@ import Base from "../layouts/Base.astro";
 import { DEFINITION, REPO, SITE } from "../lib/site.mjs";
 
 const description =
-	"gitmind gives Claude, ChatGPT, Claude Code and Codex one shared memory: Markdown notes in a git repository you own, served to every AI app over MCP.";
+	"Your AI agents stop forgetting. gitmind gives Claude, ChatGPT, Claude Code and Codex one shared memory: Markdown notes in a git repository you own, served to every AI app over MCP.";
 const features = [
-	["Works in every AI app", "One MCP endpoint for claude.ai on web, desktop and mobile, ChatGPT, Claude Code and Codex. Your agents remember the same things everywhere."],
-	["Your memory is a git repo", "Every note is Markdown, every change is a commit. Clone it, read it in Obsidian, review its history, take it with you."],
-	["Agents that save the right things", "Decisions, preferences, gotchas and setup knowledge, written as short facts with links between them, with a nudge to save and a duplicate check."],
+	["Works in every AI app", "One MCP endpoint for claude.ai on web, desktop and mobile, ChatGPT, Claude Code and Codex. What one app learns, the others know."],
+	["Automatic", "Agents save decisions, preferences, gotchas and setup knowledge as short facts while they work, and load them when the next session starts. Nothing to approve."],
+	["Facts stay current", "When something changes, the old fact moves to a dated History instead of contradicting the new one, and agents are warned when they save something that conflicts."],
+	["Your memory is a git repo", "Every note is Markdown, every change is a commit. Clone it, read it in Obsidian, see its history, take it with you."],
 	["Shared with your team", "Team workspaces share a memory between people and their agents, with invite links and roles."],
-	["Bring your history", "Import Claude and ChatGPT exports, or a folder of Markdown notes, and start from what you already know."],
 	["Open source", "AGPL-3.0. Use gitmind.app, or self-host it on your own Cloudflare account in a few minutes."],
 ];
 // Questions people ask AI search about agent memory. Answers are HTML; the
@@ -99,10 +99,11 @@ const jsonLd = {
 <Base title="gitmind" description={description} jsonLd={jsonLd}>
 	<section class="pt-4 md:pt-10">
 		<p class="mb-5 text-[13px] uppercase tracking-[0.1em] text-muted">Memory for AI agents</p>
-		<h1 class="text-[40px] leading-[1.1] md:text-[52px]">One memory for every AI you work with.</h1>
-		<p class="mt-6 max-w-[580px] text-[17px] text-muted">
-			gitmind is an open-source memory for AI agents. It keeps what your agents learn (decisions, preferences, gotchas, how things are set up)
-			as Markdown notes in a git repository you own, and gives every AI app the same memory over MCP: Claude, ChatGPT, Claude Code and Codex.
+		<h1 class="text-[40px] leading-[1.1] md:text-[52px]">Your AI agents stop forgetting.</h1>
+		<p class="mt-6 max-w-[600px] text-[17px] text-muted">
+			Every new session starts from zero, so you re-explain your stack, your preferences and the bug you already fixed. gitmind gives
+			Claude, ChatGPT, Claude Code and Codex one shared memory: agents save what they learn as they work and recall it next time, in
+			whichever app you use. It's open source, and your memory is Markdown notes in a git repository you own.
 		</p>
 		<div class="mt-8 flex flex-wrap gap-3">
 			<a href="/app" class="rounded-md bg-accent px-4 py-2.5 text-accent-ink no-underline hover:opacity-90">Start with GitHub</a>
