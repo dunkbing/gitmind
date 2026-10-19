@@ -97,12 +97,12 @@ describe("inbox", () => {
 
 describe("inbox conflicts", () => {
 	it("shows facts an app's change may replace, and retires them into History", async () => {
-		const dee = await signedIn("dee");
-		const { token } = await connect(dee, { clientName: "ChatGPT" });
-		await call(dee, "POST", "/w/dee/notes", { title: "Stack", directory: "shop", content: "- [decision] use Postgres for the orders database\n- [setup] deploys run nightly" });
+		const zed = await signedIn("zed");
+		const { token } = await connect(zed, { clientName: "ChatGPT" });
+		await call(zed, "POST", "/w/zed/notes", { title: "Stack", directory: "shop", content: "- [decision] use Postgres for the orders database\n- [setup] deploys run nightly" });
 		await tool(token, "write_note", { title: "Database", directory: "shop", content: "- [decision] move the orders database to SQLite\n- [gotcha] backups need WAL mode" });
 
-		const item = (await inbox(dee, "dee")).items.find((i: { path: string }) => i.path === "shop/database.md");
+		const item = (await inbox(zed, "zed")).items.find((i: { path: string }) => i.path === "shop/database.md");
 		expect(item.conflicts).toEqual([
 			{
 				fact: { category: "decision", text: "move the orders database to SQLite" },
@@ -111,13 +111,13 @@ describe("inbox conflicts", () => {
 			},
 		]);
 
-		const r = await call(dee, "POST", "/w/dee/supersede", { path: "shop/stack.md", fact: "[decision] use Postgres for the orders database" });
+		const r = await call(zed, "POST", "/w/zed/supersede", { path: "shop/stack.md", fact: "[decision] use Postgres for the orders database" });
 		expect(r.status).toBe(200);
-		const content = (await call(dee, "GET", "/w/dee/note?path=shop/stack.md")).data.content as string;
+		const content = (await call(zed, "GET", "/w/zed/note?path=shop/stack.md")).data.content as string;
 		expect(content).toMatch(/- \[setup\] deploys run nightly\n\n## History\n\n- \[decision\] use Postgres for the orders database \(removed \d{4}-\d{2}-\d{2}\)\n$/);
 		// The conflict is gone, and the user's own edit didn't add a review.
-		const box = await inbox(dee, "dee");
+		const box = await inbox(zed, "zed");
 		expect(box.items.map((i: { path: string; conflicts: unknown[] }) => [i.path, i.conflicts.length])).toEqual([["shop/database.md", 0]]);
-		expect((await call(dee, "POST", "/w/dee/supersede", { path: "shop/stack.md", fact: "use MySQL" })).status).toBe(400);
+		expect((await call(zed, "POST", "/w/zed/supersede", { path: "shop/stack.md", fact: "use MySQL" })).status).toBe(400);
 	});
 });

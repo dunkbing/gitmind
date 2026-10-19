@@ -28,11 +28,8 @@ export function useLocation(): URL {
 export type Route =
 	| { view: "home"; slug: string }
 	| { view: "note"; slug: string; path: string }
-	| { view: "search"; slug: string }
 	| { view: "graph"; slug: string }
-	| { view: "history"; slug: string }
 	| { view: "inbox"; slug: string }
-	| { view: "import"; slug: string }
 	| { view: "settings"; slug: string }
 	| { view: "connect"; slug?: string }
 	| { view: "unknown" };
@@ -45,7 +42,10 @@ export function parseRoute(url: URL): Route {
 	const rest = m[2] ?? "";
 	if (rest === "") return { view: "home", slug };
 	if (rest.startsWith("n/")) return { view: "note", slug, path: rest.slice(2).split("/").map(decodeURIComponent).join("/") };
-	if (["search", "graph", "history", "import", "settings", "inbox"].includes(rest)) return { view: rest as "search", slug };
+	if (["graph", "settings", "inbox"].includes(rest)) return { view: rest as "graph", slug };
+	// Pages that were folded away: importing is in Settings, search is ⌘K.
+	if (rest === "import") return { view: "settings", slug };
+	if (rest === "search" || rest === "history") return { view: "home", slug };
 	return { view: "unknown" };
 }
 

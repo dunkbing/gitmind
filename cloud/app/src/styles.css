@@ -1,6 +1,25 @@
 @import "tailwindcss";
 @import "../../site/src/styles/tokens.css";
 
+/* Code colours for the editor's syntax highlighting, light and dark. */
+:root {
+	--code: #a0522d;
+	--code-2: #7a5cc4;
+	--code-3: #2d6a9f;
+}
+@media (prefers-color-scheme: dark) {
+	:root:not([data-theme="light"]) {
+		--code: #e0a370;
+		--code-2: #b79cf0;
+		--code-3: #7fb6e8;
+	}
+}
+:root[data-theme="dark"] {
+	--code: #e0a370;
+	--code-2: #b79cf0;
+	--code-3: #7fb6e8;
+}
+
 @layer base {
 	html,
 	body,
@@ -21,16 +40,16 @@
 
 @layer components {
 	.btn {
-		@apply inline-flex items-center justify-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-[13.5px] font-medium text-accent-ink transition hover:opacity-90 disabled:opacity-50;
+		@apply inline-flex items-center justify-center gap-1.5 rounded-[3px] bg-accent px-3 py-1.5 text-[13.5px] font-medium text-accent-ink transition hover:opacity-90 disabled:opacity-50;
 	}
 	.btn-ghost {
-		@apply inline-flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-[13.5px] text-muted transition hover:bg-accent-soft hover:text-ink disabled:opacity-50;
+		@apply inline-flex items-center justify-center gap-1.5 rounded-[3px] px-2 py-1.5 text-[13.5px] text-muted transition hover:bg-accent-soft hover:text-ink disabled:opacity-50;
 	}
 	.btn-outline {
-		@apply inline-flex items-center justify-center gap-1.5 rounded-md border border-line px-3 py-1.5 text-[13.5px] text-ink transition hover:bg-surface disabled:opacity-50;
+		@apply inline-flex items-center justify-center gap-1.5 rounded-[3px] bg-ink/[0.06] px-3 py-1.5 text-[13.5px] text-ink transition hover:bg-ink/[0.11] disabled:opacity-50;
 	}
 	.btn-danger {
-		@apply inline-flex items-center justify-center gap-1.5 rounded-md bg-danger px-3 py-1.5 text-[13.5px] text-white transition hover:opacity-90;
+		@apply inline-flex items-center justify-center gap-1.5 rounded-[3px] bg-danger px-3 py-1.5 text-[13.5px] text-white transition hover:opacity-90;
 	}
 	.field {
 		@apply w-full rounded-md border border-line bg-surface px-2.5 py-1.5 text-[14px] text-ink outline-none placeholder:text-muted/70 focus:border-accent;
@@ -365,7 +384,7 @@
 	height: 26px;
 	min-width: 26px;
 	padding: 0 5px;
-	border-radius: 6px;
+	border-radius: 3px;
 	color: var(--ink-muted);
 	background: transparent;
 	border: none;
@@ -411,14 +430,24 @@
 	vertical-align: 3px;
 	font-family: var(--font-sans);
 	font-weight: 400;
-	border: 1px solid var(--line);
-	border-radius: 999px;
-	background: transparent;
+	border: 0;
+	border-radius: 3px;
+	background: color-mix(in srgb, var(--ink) 6%, transparent);
 	color: var(--ink-muted);
 	font-size: 12.5px;
 	cursor: pointer;
 }
 .gm-history-fold:hover {
 	color: var(--ink);
-	border-color: var(--ink-muted);
+	background: color-mix(in srgb, var(--ink) 11%, transparent);
+}
+
+/* Source mode: a fact's [category] and #tags. */
+.gm-editor .gm-src-category {
+	color: var(--accent);
+	background: var(--accent-soft);
+	border-radius: 2px;
+}
+.gm-editor .gm-src-tag {
+	color: var(--accent);
 }

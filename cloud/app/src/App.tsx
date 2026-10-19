@@ -1,7 +1,7 @@
 // The app shell: sidebar (workspace, navigation, pinned notes, the folder
 // tree), the current view, the command palette and toasts.
 
-import { ChevronDown, ChevronRight, FileText, BookOpen, Folder as FolderIcon, History, Home, Import, Inbox, Menu, Moon, Network, Pin, Plug, Plus, Search, Settings, Sun, X } from "lucide-react";
+import { ChevronDown, ChevronRight, FileText, BookOpen, Folder as FolderIcon, Home, Inbox, Menu, Moon, Network, Pin, Plus, Search, Settings, Sun, X } from "lucide-react";
 import { type ReactNode, Suspense, lazy, useEffect, useMemo, useState } from "react";
 import type { Hit, Workspace } from "./api";
 import { api } from "./api";
@@ -10,11 +10,8 @@ import { Link, navigate, noteUrl, parseRoute, type Route, useLocation, wsUrl } f
 import { loadInboxCount, loadMe, loadNotes, patchNotes, prefetch, toast, useStore } from "./store";
 import { type Folder, tree, uniqueTitle } from "./notes";
 import { ConnectView } from "./views/Connect";
-import { HistoryView } from "./views/History";
 import { HomeView } from "./views/Home";
-import { ImportView } from "./views/Import";
 import { InboxView } from "./views/Inbox";
-import { SearchView } from "./views/Search";
 import { SettingsView } from "./views/Settings";
 
 // The editor (CodeMirror) and graph load on first use, keeping the first
@@ -22,12 +19,18 @@ import { SettingsView } from "./views/Settings";
 const NoteView = lazy(() => import("./views/Note").then((m) => ({ default: m.NoteView })));
 const GraphView = lazy(() => import("./views/Graph").then((m) => ({ default: m.GraphView })));
 
+const PALETTE_EVENT = "gm-palette";
+
+// openPalette opens the ⌘K palette with a query, e.g. "#tag" from a tag link.
+export const openPalette = (query = "") => dispatchEvent(new CustomEvent(PALETTE_EVENT, { detail: query }));
+
 export function App() {
 	const me = useStore((s) => s.me);
 	const url = useLocation();
 	const route = parseRoute(url);
 	const [error, setError] = useState("");
-	const [paletteOpen, setPaletteOpen] = useState(false);
+	// The palette's starting query while it's open, null when closed.
+	const [palette, setPalette] = useState<string | null>(null);
 	const [drawer, setDrawer] = useState(false);
 
 	useEffect(() => {
@@ -65,19 +68,29 @@ export function App() {
 			const mod = e.metaKey || e.ctrlKey;
 			if (mod && (e.key === "k" || e.key === "p" || e.key === "o")) {
 				e.preventDefault();
-				setPaletteOpen((o) => !o);
+				setPalette((p) => (p === null ? "" : null));
 			}
 			if (mod && e.altKey && e.key.toLowerCase() === "n" && ws) {
 				e.preventDefault();
 				newNote(ws.slug, "");
 			}
 		};
+		const onOpen = (e: Event) => setPalette((e as CustomEvent<string>).detail);
 		addEventListener("keydown", onKey);
-		return () => removeEventListener("keydown", onKey);
+		addEventListener(PALETTE_EVENT, onOpen);
+		return () => {
+			removeEventListener("keydown", onKey);
+			removeEventListener(PALETTE_EVENT, onOpen);
+		};
 	}, [ws?.slug]);
 
 	if (error) return <Centered>{error}</Centered>;
 	if (!me) return <Centered><span className="animate-pulse text-muted">Loading…</span></Centered>;
+	// /connect (linked from sign-in pages) is a section of Settings now.
+	if (route.view === "connect" && me.workspaces[0]) {
+		navigate(wsUrl(me.workspaces[0].slug, "settings") + "#connect", { replace: true });
+		return null;
+	}
 	if (!ws && route.view !== "connect") {
 		const home = me.workspaces[0];
 		if (home) navigate(wsUrl(home.slug), { replace: true });
@@ -90,7 +103,7 @@ export function App() {
 			<aside
 				className={`fixed inset-y-0 left-0 z-30 flex w-[260px] shrink-0 flex-col border-r border-line bg-paper transition-transform md:static md:translate-x-0 ${drawer ? "translate-x-0 shadow-2xl" : "-translate-x-full"}`}
 			>
-				<Sidebar ws={ws!} workspaces={me.workspaces} route={route} openPalette={() => setPaletteOpen(true)} />
+				<Sidebar ws={ws!} workspaces={me.workspaces} route={route} openPalette={() => setPalette("")} />
 			</aside>
 			{drawer && <div className="fixed inset-0 z-20 bg-black/30 md:hidden" onClick={() => setDrawer(false)} />}
 			<main className="flex min-w-0 flex-1 flex-col overflow-hidden">
@@ -99,7 +112,7 @@ export function App() {
 						<Menu size={18} />
 					</button>
 					<span className="truncate text-[14px]">{ws?.name}</span>
-					<button className="btn-ghost ml-auto" onClick={() => setPaletteOpen(true)} aria-label="Search">
+					<button className="btn-ghost ml-auto" onClick={() => setPalette("")} aria-label="Search">
 						<Search size={18} />
 					</button>
 				</div>
@@ -109,7 +122,7 @@ export function App() {
 					</Suspense>
 				</div>
 			</main>
-			{paletteOpen && ws && <Palette ws={ws} onClose={() => setPaletteOpen(false)} />}
+			{palette !== null && ws && <Palette ws={ws} initial={palette} onClose={() => setPalette(null)} />}
 			<Toasts />
 		</div>
 	);
@@ -121,16 +134,10 @@ function View({ route, ws }: { route: Route; ws: Workspace }) {
 			return <HomeView ws={ws} />;
 		case "note":
 			return <NoteView ws={ws} path={route.path} />;
-		case "search":
-			return <SearchView ws={ws} />;
 		case "graph":
 			return <GraphView ws={ws} />;
-		case "history":
-			return <HistoryView ws={ws} />;
 		case "inbox":
 			return <InboxView ws={ws} />;
-		case "import":
-			return <ImportView ws={ws} />;
 		case "settings":
 			return <SettingsView ws={ws} />;
 		case "connect":
@@ -191,7 +198,7 @@ function Sidebar({ ws, workspaces, route, openPalette }: { ws: Workspace; worksp
 	return (
 		<div className="flex h-full flex-col">
 			<div className="relative px-2 pt-3">
-				<button className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-accent-soft/60" onClick={() => setSwitcher((s) => !s)}>
+				<button className="flex w-full items-center gap-2 rounded-[3px] px-2 py-1.5 text-left hover:bg-accent-soft/60" onClick={() => setSwitcher((s) => !s)}>
 					{LOGO}
 					<span className="min-w-0 flex-1 truncate text-[14px] font-medium">{ws.name}</span>
 					<ChevronDown size={14} className="text-muted" />
@@ -215,7 +222,7 @@ function Sidebar({ ws, workspaces, route, openPalette }: { ws: Workspace; worksp
 			</div>
 
 			<div className="flex gap-1 px-3 pt-2">
-				<button className="flex flex-1 items-center gap-2 rounded-md border border-line bg-surface px-2 py-1 text-[13px] text-muted hover:text-ink" onClick={openPalette}>
+				<button className="flex flex-1 items-center gap-2 rounded-[3px] bg-ink/[0.06] px-2 py-1 text-[13px] text-muted hover:bg-ink/[0.11] hover:text-ink" onClick={openPalette}>
 					<Search size={14} />
 					Search
 					<kbd className="ml-auto font-sans text-[11px] opacity-70">{mac ? "⌘K" : "Ctrl K"}</kbd>
@@ -229,10 +236,7 @@ function Sidebar({ ws, workspaces, route, openPalette }: { ws: Workspace; worksp
 				{item("home", wsUrl(ws.slug), <Home size={15} />, "Home")}
 				{item("inbox", wsUrl(ws.slug, "inbox"), <Inbox size={15} />, "Inbox", pending)}
 				{item("graph", wsUrl(ws.slug, "graph"), <Network size={15} />, "Graph")}
-				{item("history", wsUrl(ws.slug, "history"), <History size={15} />, "History")}
-				{item("import", wsUrl(ws.slug, "import"), <Import size={15} />, "Import")}
 				{item("settings", wsUrl(ws.slug, "settings"), <Settings size={15} />, "Settings")}
-				{item("connect", "/connect", <Plug size={15} />, "Connect apps")}
 			</nav>
 
 			<div className="mt-3 min-h-0 flex-1 overflow-y-auto px-2 pb-4">
@@ -279,7 +283,7 @@ function NewTeam({ onDone }: { onDone: () => void }) {
 	const [open, setOpen] = useState(false);
 	if (!open)
 		return (
-			<button className="mt-1 flex w-full items-center gap-2 rounded-md border-t border-line px-2 py-1.5 text-[13px] text-muted hover:text-ink" onClick={() => setOpen(true)}>
+			<button className="mt-1 flex w-full items-center gap-2 rounded-[3px] border-t border-line px-2 py-1.5 text-[13px] text-muted hover:text-ink" onClick={() => setOpen(true)}>
 				<Plus size={13} /> New team workspace
 			</button>
 		);
@@ -347,7 +351,7 @@ function FolderRow({ f, ws, route, depth }: { f: Folder; ws: Workspace; route: R
 					<FolderIcon size={14} />
 					<span className="truncate">{f.name}</span>
 				</button>
-				<button className="mr-1 hidden rounded p-0.5 text-muted group-hover:block hover:text-ink" title={`New note in ${f.path}`} onClick={() => newNote(ws.slug, f.path)}>
+				<button className="mr-1 hidden rounded-[3px] p-0.5 text-muted group-hover:block hover:text-ink" title={`New note in ${f.path}`} onClick={() => newNote(ws.slug, f.path)}>
 					<Plus size={13} />
 				</button>
 			</div>

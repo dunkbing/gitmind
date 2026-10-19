@@ -1,4 +1,5 @@
-// How to connect AI apps to this server.
+// How to connect AI apps to this server: a section of Settings, and a page
+// of its own for an account without a workspace.
 
 import { Copy } from "lucide-react";
 import type { ReactNode } from "react";
@@ -17,20 +18,28 @@ function Box({ text }: { text: string }) {
 
 function App({ name, children }: { name: string; children: ReactNode }) {
 	return (
-		<section className="card mt-4 p-5">
-			<h2 className="font-serif text-[18px]">{name}</h2>
-			<div className="mt-1 text-[14px]">{children}</div>
-		</section>
+		<div className="mt-5">
+			<h3 className="text-[14.5px] font-medium">{name}</h3>
+			<div className="mt-0.5 text-[14px]">{children}</div>
+		</div>
 	);
 }
 
 export function ConnectView() {
-	const me = useStore((s) => s.me)!;
-	const mcp = me.mcpUrl;
 	return (
 		<div className="mx-auto max-w-[760px] px-5 py-10 md:px-10">
 			<h1 className="view-title">Connect your AI apps</h1>
-			<p className="mt-2 text-[14.5px]">Every app connects to the same MCP endpoint and signs in as you:</p>
+			<ConnectApps />
+		</div>
+	);
+}
+
+export function ConnectApps() {
+	const me = useStore((s) => s.me)!;
+	const mcp = me.mcpUrl;
+	return (
+		<>
+			<p className="mt-2 text-[14px]">Every app connects to the same MCP endpoint and signs in as you, so they all remember the same things:</p>
 			<Box text={mcp} />
 			<App name="claude.ai, Claude Desktop and Claude mobile">
 				Settings → Connectors → <em>Add custom connector</em>, name it <code>gitmind</code> and paste the URL above. It then works on every device you use Claude on.
@@ -57,6 +66,6 @@ export function ConnectView() {
 					Windows (PowerShell): <code>irm https://gitmind.app/install.ps1 | iex</code>
 				</p>
 			</App>
-		</div>
+		</>
 	);
 }

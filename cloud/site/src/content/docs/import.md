@@ -5,7 +5,7 @@ section: Guides
 order: 7
 ---
 
-On your workspace's **Import** page, upload one of:
+In your workspace's **Settings**, under **Import**, upload one of:
 
 - **A Claude export**: claude.ai → Settings → Privacy → Export data. Upload
   the zip you receive by email.

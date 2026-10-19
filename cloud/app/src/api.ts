@@ -46,14 +46,6 @@ export interface Graph {
 	edges: { from: string; to: string }[];
 }
 
-export interface Commit {
-	oid: string;
-	message: string;
-	author: string;
-	time: number;
-	files: string[];
-}
-
 export interface Member {
 	user_id: string;
 	login: string;
@@ -139,8 +131,7 @@ export const api = {
 		call<{ path: string; updated: string[] }>("POST", `${w(slug)}/move`, { path, directory, title }),
 	pin: (slug: string, path: string, pinned: boolean) => call<{ path: string }>("POST", `${w(slug)}/pin`, { path, pinned }),
 	remove: (slug: string, path: string) => call<{ path: string }>("DELETE", `${w(slug)}/note?${qs({ path })}`),
-	search: (slug: string, q: { q?: string; tag?: string; category?: string; since?: string; limit?: number; mode?: "hybrid" | "keyword" | "semantic" }) =>
-		call<Hit[]>("GET", `${w(slug)}/search?${qs(Object.fromEntries(Object.entries(q).filter(([, v]) => v).map(([k, v]) => [k, String(v)])))}`),
+	search: (slug: string, q: string, limit: number) => call<Hit[]>("GET", `${w(slug)}/search?${qs({ q, limit: String(limit) })}`),
 	related: (slug: string, path: string) => call<Hit[]>("GET", `${w(slug)}/related?${qs({ path })}`),
 	inbox: (slug: string) => call<{ items: InboxItem[]; settings: ReviewSettings; sources: string[] }>("GET", `${w(slug)}/inbox`),
 	inboxCount: (slug: string) => call<{ count: number }>("GET", `${w(slug)}/inbox/count`),
@@ -150,7 +141,6 @@ export const api = {
 	setReview: (slug: string, settings: ReviewSettings) => call<ReviewSettings>("PUT", `${w(slug)}/review`, settings),
 	profile: (slug: string) => call<ProfileFact[]>("GET", `${w(slug)}/profile`),
 	graph: (slug: string) => call<Graph>("GET", `${w(slug)}/graph`),
-	history: (slug: string) => call<Commit[]>("GET", `${w(slug)}/history`),
 	importFile: (slug: string, file: File) => {
 		const f = new FormData();
 		f.set("file", file);

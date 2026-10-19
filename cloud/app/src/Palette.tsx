@@ -1,7 +1,7 @@
 // The command palette (⌘K): jump to a note by title as you type, search
 // note contents on the server, or run a command.
 
-import { CornerDownLeft, FileText, Network, Plus, Search as SearchIcon, Settings, History, Import, Plug, Home } from "lucide-react";
+import { CornerDownLeft, FileText, Network, Plus, Search as SearchIcon, Settings, Plug, Home, Upload } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { newNote } from "./App";
 import { type Hit, type Workspace, api } from "./api";
@@ -31,9 +31,9 @@ function score(title: string, q: string): number {
 	return j === q.length ? 20 : -1;
 }
 
-export function Palette({ ws, onClose }: { ws: Workspace; onClose: () => void }) {
+export function Palette({ ws, onClose, initial = "" }: { ws: Workspace; onClose: () => void; initial?: string }) {
 	const notes = useStore((s) => s.notes[ws.slug]) ?? [];
-	const [q, setQ] = useState("");
+	const [q, setQ] = useState(initial);
 	const [sel, setSel] = useState(0);
 	const [hits, setHits] = useState<Hit[]>([]);
 	const list = useRef<HTMLDivElement>(null);
@@ -42,7 +42,7 @@ export function Palette({ ws, onClose }: { ws: Workspace; onClose: () => void })
 	useEffect(() => {
 		const query = q.trim();
 		if (query.length < 2) return setHits([]);
-		const t = setTimeout(() => api.search(ws.slug, { q: query, limit: 8 }).then(setHits, () => {}), 180);
+		const t = setTimeout(() => api.search(ws.slug, query, 10).then(setHits, () => {}), 180);
 		return () => clearTimeout(t);
 	}, [q, ws.slug]);
 
@@ -55,12 +55,10 @@ export function Palette({ ws, onClose }: { ws: Workspace; onClose: () => void })
 		const commands: Item[] = [
 			{ key: "new", icon: <Plus size={15} />, label: query ? `New note "${q.trim()}"` : "New note", run: () => (onClose(), query ? createTitled(ws.slug, q.trim()) : newNote(ws.slug, "")) },
 			{ key: "home", icon: <Home size={15} />, label: "Go to Home", run: go(wsUrl(ws.slug)) },
-			{ key: "search", icon: <SearchIcon size={15} />, label: query ? `Search for "${q.trim()}"` : "Search notes", run: go(wsUrl(ws.slug, "search") + (query ? `?q=${encodeURIComponent(q.trim())}` : "")) },
 			{ key: "graph", icon: <Network size={15} />, label: "Open graph", run: go(wsUrl(ws.slug, "graph")) },
-			{ key: "history", icon: <History size={15} />, label: "Open history", run: go(wsUrl(ws.slug, "history")) },
-			{ key: "import", icon: <Import size={15} />, label: "Import chats or notes", run: go(wsUrl(ws.slug, "import")) },
-			{ key: "settings", icon: <Settings size={15} />, label: "Workspace settings", run: go(wsUrl(ws.slug, "settings")) },
-			{ key: "connect", icon: <Plug size={15} />, label: "Connect AI apps", run: go("/connect") },
+			{ key: "settings", icon: <Settings size={15} />, label: "Settings", run: go(wsUrl(ws.slug, "settings")) },
+			{ key: "connect", icon: <Plug size={15} />, label: "Connect AI apps", run: go(wsUrl(ws.slug, "settings") + "#connect") },
+			{ key: "import", icon: <Upload size={15} />, label: "Import chats or notes", run: go(wsUrl(ws.slug, "settings") + "#import") },
 		];
 		const byTitle = query
 			? notes
@@ -80,7 +78,7 @@ export function Palette({ ws, onClose }: { ws: Workspace; onClose: () => void })
 			run: go(noteUrl(ws.slug, n.path)),
 			path: n.path,
 		});
-		const matchingCommands = query ? commands.filter((c) => c.key === "new" || c.key === "search" || c.label.toLowerCase().includes(query)) : commands.slice(0, 1);
+		const matchingCommands = query ? commands.filter((c) => c.key === "new" || c.label.toLowerCase().includes(query)) : commands.slice(0, 1);
 		return [
 			...byTitle.map((n) => noteItem(n)),
 			...content.map((h) => noteItem(h, (h.snippet || h.summary).replace(/\*\*/g, "").slice(0, 90))),
@@ -126,7 +124,7 @@ export function Palette({ ws, onClose }: { ws: Workspace; onClose: () => void })
 						<button
 							key={it.key}
 							data-i={i}
-							className={`flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-[14px] ${i === sel ? "bg-accent-soft" : ""}`}
+							className={`flex w-full items-center gap-2.5 rounded-[3px] px-2.5 py-2 text-left text-[14px] ${i === sel ? "bg-accent-soft" : ""}`}
 							onMouseMove={() => setSel(i)}
 							onClick={() => it.run()}
 						>

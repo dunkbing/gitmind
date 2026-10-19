@@ -49,8 +49,8 @@ changes.
 
 Every commit says where a change came from: `memory: edit dev/stack.md (cloud,
 you, claude.ai)` for a cloud change, `memory: add ops/deploy.md (macbook,
-claude-code)` for one pushed by the CLI. The **History** page and `git log`
-show it for every change, reviewed or not.
+claude-code)` for one pushed by the CLI. `git log` on your notes repository
+shows it for every change, reviewed or not.
 
 ## Settings
 

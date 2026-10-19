@@ -18,11 +18,6 @@ export function HomeView({ ws }: { ws: Workspace }) {
 	useEffect(() => {
 		api.profile(ws.slug).then(setProfile, () => setProfile([]));
 	}, [ws.slug, notes]);
-	const tags = useMemo(() => {
-		const count = new Map<string, number>();
-		for (const n of notes ?? []) for (const t of n.tags) count.set(t, (count.get(t) ?? 0) + 1);
-		return [...count].sort((a, b) => b[1] - a[1]).slice(0, 24);
-	}, [notes]);
 
 	return (
 		<div className="mx-auto max-w-[920px] px-5 py-10 md:px-10">
@@ -43,10 +38,10 @@ export function HomeView({ ws }: { ws: Workspace }) {
 					<h2 className="font-serif text-[20px]">Your memory is empty</h2>
 					<ul className="mt-3 space-y-2 text-[14.5px]">
 						<li>
-							<Link href="/connect">Connect an AI app</Link>: Claude, ChatGPT, Claude Code or Codex will save what they learn here.
+							<Link href={wsUrl(ws.slug, "settings") + "#connect"}>Connect an AI app</Link>: Claude, ChatGPT, Claude Code or Codex will save what they learn here.
 						</li>
 						<li>
-							<Link href={wsUrl(ws.slug, "import")}>Import your Claude or ChatGPT history</Link>, or a folder of Markdown notes.
+							<Link href={wsUrl(ws.slug, "settings") + "#import"}>Import your Claude or ChatGPT history</Link>, or a folder of Markdown notes.
 						</li>
 						<li>
 							<button className="text-accent underline-offset-2 hover:underline" onClick={() => newNote(ws.slug, "")}>
@@ -114,18 +109,6 @@ export function HomeView({ ws }: { ws: Workspace }) {
 				</section>
 			)}
 
-			{tags.length > 0 && (
-				<section className="mt-10">
-					<h2 className="label mb-3">Tags</h2>
-					<div className="flex flex-wrap gap-1.5">
-						{tags.map(([t, c]) => (
-							<Link key={t} href={wsUrl(ws.slug, "search") + `?tag=${encodeURIComponent(t)}`} className="chip no-underline">
-								#{t} <span className="text-muted">{c}</span>
-							</Link>
-						))}
-					</div>
-				</section>
-			)}
 		</div>
 	);
 }

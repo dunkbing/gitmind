@@ -4,6 +4,7 @@
 import { autocompletion, type CompletionContext, type CompletionResult } from "@codemirror/autocomplete";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
+import { languages } from "@codemirror/language-data";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { highlightSelectionMatches, search, searchKeymap } from "@codemirror/search";
 import { Compartment, EditorState, type Extension } from "@codemirror/state";
@@ -14,10 +15,11 @@ import { frontmatter } from "./frontmatter";
 import { foldHistory, historyFolding } from "./historyFold";
 import { linkClicks, livePreview } from "./livePreview";
 import { searchPanel } from "./searchPanel";
+import { sourceMarks } from "./sourceMarks";
 
-// Obsidian's three views: live preview (formatted, syntax shown where you
-// edit), source (the raw file) and reading (formatted, not editable).
-export type Mode = "live" | "source" | "read";
+// Obsidian's two editing views: live preview (formatted, syntax shown where
+// you edit) and source (the raw file, highlighted).
+export type Mode = "live" | "source";
 
 export interface EditorProps {
 	mode: Mode;
@@ -32,15 +34,23 @@ export interface EditorProps {
 	viewRef?: { current: EditorView | null };
 }
 
+// Markdown, plus the code in fenced blocks (```js, ```go…), whose
+// languages load when a note first uses them.
 const highlight = HighlightStyle.define([
 	{ tag: t.heading, fontWeight: "600" },
-	{ tag: t.monospace, fontFamily: "var(--font-mono)" },
-	{ tag: [t.processingInstruction, t.meta], color: "var(--ink-muted)" },
-	{ tag: t.keyword, color: "var(--accent)" },
-	{ tag: [t.string, t.special(t.string)], color: "#b5651d" },
+	{ tag: t.strong, fontWeight: "600" },
+	{ tag: t.emphasis, fontStyle: "italic" },
+	{ tag: t.strikethrough, textDecoration: "line-through" },
+	{ tag: t.quote, color: "var(--ink-muted)", fontStyle: "italic" },
+	{ tag: [t.link, t.url], color: "var(--accent)" },
+	{ tag: t.monospace, fontFamily: "var(--font-mono)", color: "var(--code)" },
+	{ tag: [t.processingInstruction, t.meta, t.contentSeparator], color: "var(--ink-muted)" },
+	{ tag: [t.keyword, t.operatorKeyword, t.modifier], color: "var(--accent)" },
+	{ tag: [t.string, t.special(t.string), t.regexp], color: "var(--code)" },
 	{ tag: t.comment, color: "var(--ink-muted)", fontStyle: "italic" },
-	{ tag: t.number, color: "#7a5cc4" },
-	{ tag: t.url, color: "var(--accent)" },
+	{ tag: [t.number, t.bool, t.null, t.atom], color: "var(--code-2)" },
+	{ tag: [t.function(t.variableName), t.function(t.propertyName), t.typeName, t.className], color: "var(--code-3)" },
+	{ tag: [t.tagName, t.attributeName, t.propertyName], color: "var(--code-3)" },
 ]);
 
 // wrap toggles a Markdown mark (e.g. ** for bold) around the selection.
@@ -72,7 +82,7 @@ function wikiCompletion(titles: () => string[]) {
 }
 
 const editability = (p: EditorProps) => {
-	const locked = !!p.readOnly || p.mode === "read";
+	const locked = !!p.readOnly;
 	return [EditorState.readOnly.of(locked), EditorView.editable.of(!locked)];
 };
 
@@ -89,14 +99,14 @@ export function Editor(p: EditorProps) {
 			history(),
 			drawSelection(),
 			EditorView.lineWrapping,
-			markdown({ base: markdownLanguage, addKeymap: true, extensions: [frontmatter] }),
+			markdown({ base: markdownLanguage, addKeymap: true, extensions: [frontmatter], codeLanguages: languages }),
 			syntaxHighlighting(highlight),
 			historyFolding,
-			p.mode === "source" ? EditorView.editorAttributes.of({ class: "gm-source" }) : livePreview,
+			p.mode === "source" ? [EditorView.editorAttributes.of({ class: "gm-source" }), sourceMarks] : livePreview,
 			search({ top: true, createPanel: searchPanel }),
 			highlightSelectionMatches({ minSelectionLength: 3 }),
 			autocompletion({ override: [wikiCompletion(() => props.current.titles())], icons: false }),
-			p.mode === "read" ? [] : placeholder("Start writing… Use [[ to link a note, - [decision] for a fact, #tag to tag it."),
+			placeholder("Start writing… Use [[ to link a note, - [decision] for a fact, #tag to tag it."),
 			keymap.of([
 				{ key: "Mod-b", run: wrap("**") },
 				{ key: "Mod-i", run: wrap("*") },

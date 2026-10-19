@@ -2,7 +2,7 @@
 // editor. Changes save on their own a moment after typing stops; renaming
 // the title moves the note (and updates links to it).
 
-import { ArrowUpRight, BookOpen, Check, Code2, Copy, FolderInput, PenLine, Link2, Lock, MoreHorizontal, PanelRight, Pin, PinOff, Trash2, X } from "lucide-react";
+import { ArrowUpRight, Check, Code2, Copy, FolderInput, PenLine, Link2, Lock, MoreHorizontal, PanelRight, Pin, PinOff, Trash2, X } from "lucide-react";
 import { type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { openSearchPanel } from "@codemirror/search";
 import type { EditorView } from "@codemirror/view";
@@ -11,6 +11,7 @@ import { ApiError, type NoteData, type Workspace, api } from "../api";
 import { Editor, type Mode } from "../editor/Editor";
 import { ago, dirOf, resolver } from "../notes";
 import { Link, navigate, noteUrl, useLocation, wsUrl } from "../router";
+import { openPalette } from "../App";
 import { cachedNote, forgetNote, loadNote, loadNotes, patchNotes, prefetch, storeNote, toast, useStore } from "../store";
 
 type Status = "saved" | "dirty" | "saving" | "error";
@@ -87,7 +88,7 @@ function NoteEditor({ ws, initial, onMoved }: { ws: Workspace; initial: NoteData
 	const readOnly = note.locked;
 	const [mode, setModeState] = useState<Mode>(() => {
 		const m = localStorage.getItem("gm-mode");
-		return m === "source" || m === "read" ? m : "live";
+		return m === "source" ? m : "live";
 	});
 	const setMode = (m: Mode) => {
 		setModeState(m);
@@ -213,12 +214,12 @@ function NoteEditor({ ws, initial, onMoved }: { ws: Workspace; initial: NoteData
 		schedule();
 	};
 
-	// ⌘E switches between editing and reading, as in Obsidian.
+	// ⌘E switches between live preview and the raw source.
 	useEffect(() => {
 		const onKey = (e: globalThis.KeyboardEvent) => {
 			if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "e") {
 				e.preventDefault();
-				setMode(mode === "read" ? "live" : "read");
+				setMode(mode === "source" ? "live" : "source");
 			}
 		};
 		addEventListener("keydown", onKey);
@@ -443,7 +444,7 @@ function NoteEditor({ ws, initial, onMoved }: { ws: Workspace; initial: NoteData
 						ref={titleRef}
 						rows={1}
 						value={title}
-						readOnly={readOnly || mode === "read"}
+						readOnly={readOnly}
 						onChange={(e) => setTitle(e.target.value.replace(/\n/g, ""))}
 						onBlur={rename}
 						onKeyDown={(e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -459,7 +460,7 @@ function NoteEditor({ ws, initial, onMoved }: { ws: Workspace; initial: NoteData
 						className="field-sizing-content w-full resize-none bg-transparent font-serif text-[34px] leading-tight font-medium tracking-tight outline-none placeholder:text-muted/50"
 						placeholder="Untitled"
 					/>
-					<Properties note={note} updated={initial.updated} path={path} readOnly={readOnly || mode === "read"} onTags={setTags} ws={ws} />
+					<Properties note={note} updated={initial.updated} path={path} readOnly={readOnly} onTags={setTags} ws={ws} />
 				</div>
 
 				<div className={`mx-auto max-w-[760px] px-5 md:px-12 ${mode === "source" ? "pt-6" : ""}`}>
@@ -471,7 +472,7 @@ function NoteEditor({ ws, initial, onMoved }: { ws: Workspace; initial: NoteData
 						readOnly={readOnly}
 						titles={() => notes.map((n) => n.title)}
 						onWikiLink={openLink}
-						onTag={(tag) => navigate(wsUrl(ws.slug, "search") + `?tag=${encodeURIComponent(tag)}`)}
+						onTag={(tag) => openPalette("#" + tag)}
 						onEscapeUp={() => titleRef.current?.focus()}
 						viewRef={editorView}
 					/>
@@ -486,7 +487,7 @@ function NoteEditor({ ws, initial, onMoved }: { ws: Workspace; initial: NoteData
 							{outline.map((h, i) => (
 								<button
 									key={i}
-									className="block w-full truncate rounded px-1.5 py-0.5 text-left text-[13px] text-muted hover:bg-accent-soft/60 hover:text-ink"
+									className="block w-full truncate rounded-[3px] px-1.5 py-0.5 text-left text-[13px] text-muted hover:bg-accent-soft/60 hover:text-ink"
 									style={{ paddingLeft: (h.level - 1) * 10 + 6 }}
 									onClick={() => {
 										const v = editorView.current;
@@ -510,7 +511,7 @@ function NoteEditor({ ws, initial, onMoved }: { ws: Workspace; initial: NoteData
 									{titleOf(l.path)}
 								</Link>
 							) : (
-								<button key={l.target} className="block w-full truncate rounded px-1.5 py-0.5 text-left text-[13px] text-danger hover:bg-accent-soft/60" onClick={() => openLink(l.target)} title="No such note yet; click to create it">
+								<button key={l.target} className="block w-full truncate rounded-[3px] px-1.5 py-0.5 text-left text-[13px] text-danger hover:bg-accent-soft/60" onClick={() => openLink(l.target)} title="No such note yet; click to create it">
 									{l.target}
 								</button>
 							),
@@ -562,12 +563,11 @@ function NoteEditor({ ws, initial, onMoved }: { ws: Workspace; initial: NoteData
 function ModeSwitch({ mode, onMode }: { mode: Mode; onMode: (m: Mode) => void }) {
 	const mac = /Mac|iPhone|iPad/.test(navigator.platform);
 	const options: { m: Mode; icon: React.ReactNode; title: string }[] = [
-		{ m: "live", icon: <PenLine size={14} />, title: "Live preview: formatted, with Markdown shown where you edit" },
-		{ m: "source", icon: <Code2 size={14} />, title: "Source: the raw Markdown file, frontmatter included" },
-		{ m: "read", icon: <BookOpen size={14} />, title: `Reading view (${mac ? "⌘" : "Ctrl+"}E)` },
+		{ m: "live", icon: <PenLine size={14} />, title: `Live preview: formatted, with Markdown shown where you edit (${mac ? "⌘" : "Ctrl+"}E)` },
+		{ m: "source", icon: <Code2 size={14} />, title: `Source: the raw Markdown file, frontmatter included (${mac ? "⌘" : "Ctrl+"}E)` },
 	];
 	return (
-		<div className="mr-1 flex items-center rounded-md border border-line p-0.5" role="radiogroup" aria-label="View">
+		<div className="mr-1 flex items-center rounded-[3px] bg-ink/[0.06] p-0.5" role="radiogroup" aria-label="View">
 			{options.map((o) => (
 				<button
 					key={o.m}
@@ -596,7 +596,7 @@ function SaveStatus({ status }: { status: Status }) {
 
 function MenuItem({ icon, children, onClick, danger }: { icon: React.ReactNode; children: React.ReactNode; onClick: () => void; danger?: boolean }) {
 	return (
-		<button className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-accent-soft ${danger ? "text-danger" : ""}`} onClick={onClick}>
+		<button className={`flex w-full items-center gap-2 rounded-[3px] px-2 py-1.5 text-left hover:bg-accent-soft ${danger ? "text-danger" : ""}`} onClick={onClick}>
 			{icon}
 			{children}
 		</button>
@@ -615,9 +615,9 @@ function Properties({ note, updated, path, readOnly, onTags, ws }: { note: Note;
 			<span className="flex flex-wrap items-center gap-1">
 				{note.tags.map((t) => (
 					<span key={t} className="chip group">
-						<Link href={wsUrl(ws.slug, "search") + `?tag=${encodeURIComponent(t)}`} className="text-accent no-underline">
+						<button onClick={() => openPalette("#" + t)} className="text-accent" title={`Notes tagged #${t}`}>
 							#{t}
-						</Link>
+						</button>
 						{!readOnly && (
 							<button className="hidden opacity-60 group-hover:inline hover:opacity-100" onClick={() => onTags(note.tags.filter((x) => x !== t))} title={`Remove #${t}`}>
 								<X size={11} />
@@ -689,7 +689,7 @@ function MoveDialog({ notes, current, onMove, onClose }: { notes: string[]; curr
 				<input className="field" autoFocus value={dir} onChange={(e) => setDir(e.target.value)} placeholder="folder, e.g. projects/gitmind (empty for the top level)" />
 				<div className="mt-2 max-h-48 overflow-y-auto">
 					{shown.map((f) => (
-						<button type="button" key={f} className="flex w-full items-center gap-2 rounded px-2 py-1 text-left text-[13.5px] hover:bg-accent-soft" onClick={() => onMove(f)}>
+						<button type="button" key={f} className="flex w-full items-center gap-2 rounded-[3px] px-2 py-1 text-left text-[13.5px] hover:bg-accent-soft" onClick={() => onMove(f)}>
 							<ArrowUpRight size={13} className="text-muted" />
 							{f || <span className="text-muted">Top level</span>}
 						</button>
