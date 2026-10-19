@@ -25,6 +25,12 @@ pushed first, the push is rejected; gitmind fetches the new state and
 recomputes the change on top of it. An "append this line" is replayed, not
 merged.
 
+Agents' changes take effect at once; there's nothing to approve. Every commit
+says where a change came from, so `git log` shows it: `memory: edit
+dev/stack.md (cloud, you, claude.ai)` for a cloud change, `memory: add
+ops/deploy.md (macbook, claude-code)` for one from the CLI. To undo a change,
+edit the note, or ask an agent to.
+
 On laptops, Markdown files use git's union merge, so two machines appending to
 the same note keep both sides. Real conflicts (one machine deletes what another
 edits) keep the edited note.

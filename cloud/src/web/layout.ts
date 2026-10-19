@@ -7,7 +7,7 @@ export interface PageOptions {
 	user?: User | null;
 	workspaces?: Workspace[];
 	current?: Workspace;
-	active?: "notes" | "inbox" | "settings";
+	active?: "notes" | "settings";
 	flash?: string;
 	error?: string;
 }
@@ -20,7 +20,7 @@ export function page(o: PageOptions, body: string): Response {
 	const item = (key: PageOptions["active"], href: string, label: string) =>
 		`<a href="${href}" class="block rounded-md px-2.5 py-1.5 text-[14px] no-underline ${o.active === key ? "bg-accent-soft text-ink" : "text-muted hover:bg-accent-soft/60 hover:text-ink"}">${label}</a>`;
 	const nav = ws
-		? item("notes", `/w/${ws.slug}`, "Notes") + item("inbox", `/w/${ws.slug}/inbox`, "Inbox") + item("settings", `/w/${ws.slug}/settings`, "Settings")
+		? item("notes", `/w/${ws.slug}`, "Notes") + item("settings", `/w/${ws.slug}/settings`, "Settings")
 		: o.user
 			? item("settings", `/connect`, "Connect apps")
 			: "";

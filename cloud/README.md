@@ -13,20 +13,16 @@ that your laptops' gitmind CLI syncs with.
   Worker assets, with a sitemap, structured data and `llms.txt` for search
   engines and AI assistants.
 - **Web app** (`app/`, a single-page app): a note editor with Obsidian-style
-  live preview (CodeMirror), autosave, `[[link]]` completion, a folder tree,
-  a ⌘K palette, backlinks and outline, search with tag, category and date
-  filters, a link graph, the change history, import and export.
+  live preview and a highlighted source view (CodeMirror), autosave,
+  `[[link]]` completion, a folder tree, a ⌘K palette for search, backlinks
+  and outline, a link graph, import and export.
 - **Semantic search**: notes are split into passages and embedded with
   Workers AI (`@cf/qwen/qwen3-embedding-0.6b`, multilingual) in the
   background after each change; vectors live in the workspace's SQLite next to the FTS index (no
   separate vector database) and search merges both rankings (reciprocal rank
   fusion). Related notes in the app come from the same vectors.
-- **Review**: every change an AI app makes (over MCP, or pushed by the CLI's
-  agents) lands in an inbox with its provenance (the OAuth client's name, or
-  the CLI's agent and machine from its commit message). Accepting clears it;
-  rejecting undoes it, and an optional reason goes to a pinned "Memory
-  feedback" note that agents read at session start. The inbox lives in the
-  workspace's Durable Object, outside the rebuildable index.
+- **Provenance**: every commit names who made the change and with which app
+  (the OAuth client's name, or the CLI's agent and machine).
 - **Import** Claude and ChatGPT data exports, or a zip of Markdown notes.
 - **Teams**: shared workspaces with invite links and owner/admin/member roles.
 - **Your data is git**: every workspace is a git repository (on Cloudflare

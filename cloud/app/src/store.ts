@@ -8,11 +8,10 @@ import { type Hit, type Me, type NoteData, api } from "./api";
 interface State {
 	me: Me | null;
 	notes: Record<string, Hit[] | undefined>; // by workspace slug
-	inbox: Record<string, number | undefined>; // changes waiting for review, by slug
 	toasts: { id: number; text: string; error?: boolean }[];
 }
 
-let state: State = { me: null, notes: {}, inbox: {}, toasts: [] };
+let state: State = { me: null, notes: {}, toasts: [] };
 const listeners = new Set<() => void>();
 
 function set(patch: Partial<State>) {
@@ -53,10 +52,6 @@ export function loadNotes(slug: string, force = false): Promise<Hit[]> {
 	return p;
 }
 
-export async function loadInboxCount(slug: string) {
-	const { count } = await api.inboxCount(slug);
-	set({ inbox: { ...state.inbox, [slug]: count } });
-}
 
 // patchNotes updates the cached list after a change made here, so the
 // sidebar reflects it at once; a refetch follows to pick up server details.

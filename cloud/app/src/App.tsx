@@ -1,17 +1,16 @@
 // The app shell: sidebar (workspace, navigation, pinned notes, the folder
 // tree), the current view, the command palette and toasts.
 
-import { ChevronDown, ChevronRight, FileText, BookOpen, Folder as FolderIcon, Home, Inbox, Menu, Moon, Network, Pin, Plus, Search, Settings, Sun, X } from "lucide-react";
+import { ChevronDown, ChevronRight, FileText, BookOpen, Folder as FolderIcon, Home, Menu, Moon, Network, Pin, Plus, Search, Settings, Sun, X } from "lucide-react";
 import { type ReactNode, Suspense, lazy, useEffect, useMemo, useState } from "react";
 import type { Hit, Workspace } from "./api";
 import { api } from "./api";
 import { Palette } from "./Palette";
 import { Link, navigate, noteUrl, parseRoute, type Route, useLocation, wsUrl } from "./router";
-import { loadInboxCount, loadMe, loadNotes, patchNotes, prefetch, toast, useStore } from "./store";
+import { loadMe, loadNotes, patchNotes, prefetch, toast, useStore } from "./store";
 import { type Folder, tree, uniqueTitle } from "./notes";
 import { ConnectView } from "./views/Connect";
 import { HomeView } from "./views/Home";
-import { InboxView } from "./views/Inbox";
 import { SettingsView } from "./views/Settings";
 
 // The editor (CodeMirror) and graph load on first use, keeping the first
@@ -49,7 +48,6 @@ export function App() {
 	useEffect(() => {
 		if (!ws) return;
 		loadNotes(ws.slug).catch((e) => toast(e.message, true));
-		loadInboxCount(ws.slug).catch(() => {});
 	}, [ws?.slug]);
 
 	// Pick up changes made elsewhere (agents, other devices) when coming back.
@@ -57,7 +55,6 @@ export function App() {
 		const onFocus = () => {
 			if (!ws) return;
 			loadNotes(ws.slug, true).catch(() => {});
-			loadInboxCount(ws.slug).catch(() => {});
 		};
 		addEventListener("focus", onFocus);
 		return () => removeEventListener("focus", onFocus);
@@ -136,8 +133,6 @@ function View({ route, ws }: { route: Route; ws: Workspace }) {
 			return <NoteView ws={ws} path={route.path} />;
 		case "graph":
 			return <GraphView ws={ws} />;
-		case "inbox":
-			return <InboxView ws={ws} />;
 		case "settings":
 			return <SettingsView ws={ws} />;
 		case "connect":
@@ -184,15 +179,13 @@ function Sidebar({ ws, workspaces, route, openPalette }: { ws: Workspace; worksp
 	const pinned = useMemo(() => (notes ?? []).filter((n) => n.pinned), [notes]);
 	const [switcher, setSwitcher] = useState(false);
 	const mac = /Mac|iPhone|iPad/.test(navigator.platform);
-	const pending = useStore((s) => s.inbox[ws.slug]) ?? 0;
-	const item = (view: Route["view"], href: string, icon: ReactNode, label: string, badge = 0) => (
+	const item = (view: Route["view"], href: string, icon: ReactNode, label: string) => (
 		<Link
 			href={href}
 			className={`flex items-center gap-2.5 rounded-md px-2 py-1 text-[13.5px] no-underline ${route.view === view ? "bg-accent-soft text-ink" : "text-muted hover:bg-accent-soft/60 hover:text-ink"}`}
 		>
 			{icon}
 			{label}
-			{badge > 0 && <span className="ml-auto rounded-full bg-accent px-1.5 text-[11px] leading-[18px] font-medium text-accent-ink">{badge}</span>}
 		</Link>
 	);
 	return (
@@ -234,7 +227,6 @@ function Sidebar({ ws, workspaces, route, openPalette }: { ws: Workspace; worksp
 
 			<nav className="flex flex-col gap-px px-2 pt-3">
 				{item("home", wsUrl(ws.slug), <Home size={15} />, "Home")}
-				{item("inbox", wsUrl(ws.slug, "inbox"), <Inbox size={15} />, "Inbox", pending)}
 				{item("graph", wsUrl(ws.slug, "graph"), <Network size={15} />, "Graph")}
 				{item("settings", wsUrl(ws.slug, "settings"), <Settings size={15} />, "Settings")}
 			</nav>

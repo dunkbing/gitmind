@@ -1,11 +1,11 @@
-// Workspace settings: connecting AI apps, review, importing, members and
-// invites for teams, and the data itself.
+// Workspace settings: connecting AI apps, importing, members and invites
+// for teams, and the data itself.
 
 import { Copy, Download } from "lucide-react";
 import { useEffect, useState } from "react";
-import { type ReviewSettings, type Settings, type Workspace, api } from "../api";
-import { Link, navigate, wsUrl } from "../router";
-import { loadInboxCount, loadMe, toast, useStore } from "../store";
+import { type Settings, type Workspace, api } from "../api";
+import { navigate } from "../router";
+import { loadMe, toast, useStore } from "../store";
 import { ConnectApps } from "./Connect";
 import { ImportNotes } from "./Import";
 
@@ -14,20 +14,6 @@ export function SettingsView({ ws }: { ws: Workspace }) {
 	const [s, setS] = useState<Settings | null>(null);
 	const [role, setRole] = useState("member");
 	const [invite, setInvite] = useState("");
-	const [review, setReview] = useState<{ settings: ReviewSettings; sources: string[] } | null>(null);
-	useEffect(() => {
-		setReview(null);
-		api.inbox(ws.slug).then((d) => setReview({ settings: d.settings, sources: d.sources }), () => {});
-	}, [ws.slug]);
-	const saveReview = async (settings: ReviewSettings) => {
-		setReview((r) => r && { ...r, settings });
-		try {
-			await api.setReview(ws.slug, settings);
-			loadInboxCount(ws.slug).catch(() => {});
-		} catch (e) {
-			toast((e as Error).message, true);
-		}
-	};
 	const reload = () => api.settings(ws.slug).then(setS, (e) => toast(e.message, true));
 	useEffect(() => {
 		setS(null);
@@ -54,37 +40,6 @@ export function SettingsView({ ws }: { ws: Workspace }) {
 				<h2 className="font-serif text-[19px]">Connect your AI apps</h2>
 				<ConnectApps />
 			</section>
-
-			{review && (
-				<section className="mt-10">
-					<h2 className="font-serif text-[19px]">Review</h2>
-					<label className="mt-3 flex items-start gap-2.5 text-[14px]">
-						<input type="checkbox" className="mt-1 accent-[var(--accent)]" checked={review.settings.enabled} onChange={(e) => saveReview({ ...review.settings, enabled: e.target.checked })} />
-						<span>
-							Send what AI apps save to the <Link href={wsUrl(ws.slug, "inbox")}>Inbox</Link> for review
-							<span className="block text-[13px] text-muted">Changes take effect right away either way; review lets you undo the ones that are wrong.</span>
-						</span>
-					</label>
-					{review.settings.enabled && review.sources.length > 0 && (
-						<div className="mt-4">
-							<div className="label mb-2">Trusted apps skip review</div>
-							{review.sources.map((src) => (
-								<label key={src} className="flex items-center gap-2.5 py-1 text-[14px]">
-									<input
-										type="checkbox"
-										className="accent-[var(--accent)]"
-										checked={review.settings.trusted.includes(src)}
-										onChange={(e) =>
-											saveReview({ ...review.settings, trusted: e.target.checked ? [...review.settings.trusted, src] : review.settings.trusted.filter((t) => t !== src) })
-										}
-									/>
-									{src}
-								</label>
-							))}
-						</div>
-					)}
-				</section>
-			)}
 
 			<section id="import" className="mt-10 scroll-mt-6">
 				<h2 className="font-serif text-[19px]">Import</h2>

@@ -53,9 +53,7 @@ for it with `include_history`. On gitmind.app it's collapsed when a note opens.
 
 When an agent saves a fact, gitmind looks for current facts of the same
 category, in the same project and in `general/`, that are about the same thing,
-and lists them in its reply so the agent can supersede the outdated one. The
-[Inbox](/docs/review/) shows the same possible conflicts for changes waiting
-for review, with a button that moves the old fact to History.
+and lists them in its reply so the agent can supersede the outdated one.
 
 ## Pinned and locked
 

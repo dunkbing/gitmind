@@ -230,8 +230,7 @@ type ImportResult struct {
 
 // Import adds many notes in one commit: notes already in memory (same path)
 // are left alone, as are notes that look like they hold a secret. The
-// commit isn't a "memory:" change, since the user runs imports themselves:
-// gitmind cloud doesn't send it to the inbox for review.
+// commit isn't a "memory:" change, since the user runs imports themselves.
 func (a *App) Import(ctx context.Context, source string, ns []notes.Note) (ImportResult, error) {
 	res := ImportResult{Skipped: map[string]string{}}
 	unlock, err := a.writeLock()
@@ -642,7 +641,6 @@ func (a *App) save(ctx context.Context, n notes.Note, verb string) error {
 
 // message is a commit message that says which machine, and which agent
 // when known, made the change: "memory: add x.md (laptop, claude-code)".
-// gitmind cloud reads it to show where a change in its inbox came from.
 func (a *App) message(verb, what string) string {
 	a.mu.Lock()
 	client := a.client
