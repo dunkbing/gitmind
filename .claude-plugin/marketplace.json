@@ -1,0 +1,15 @@
+{
+  "name": "gitmind",
+  "owner": {
+    "name": "gitmind",
+    "url": "https://gitmind.app"
+  },
+  "description": "gitmind: persistent memory for coding agents, as Markdown notes in git.",
+  "plugins": [
+    {
+      "name": "gitmind",
+      "source": "./plugin",
+      "description": "Persistent memory for Claude Code, stored as Markdown notes in git and shared across your machines and AI apps."
+    }
+  ]
+}

@@ -57,15 +57,31 @@ Running `setup` again and choosing somewhere else switches the notes folder
 over: it's backed up as `~/.gitmind.bak-DATE`, and notes missing from the new
 place are copied in (differing ones are kept as `NAME-previous.md`).
 
-`setup` then offers to add gitmind to Claude Code and Codex: the MCP server,
-the Claude Code hooks below, and the memory instructions, asking before each
-change. `gitmind agents` does just that step again. To do it by hand instead:
+`setup` then offers to add gitmind to Claude Code and Codex, asking before
+each change. `gitmind agents` does just that step again. To do it by hand
+instead:
 
 ### Claude Code
 
-```bash
-claude mcp add --scope user gitmind -- gitmind
+Install the plugin, which bundles the MCP server, the hooks below, and the
+memory instructions as a skill ([`plugin/`](plugin)):
+
 ```
+/plugin install gitmind --marketplace dunkbing/gitmind
+```
+
+From a shell, or with Claude Code older than 2.1.275:
+
+```bash
+claude plugin marketplace add dunkbing/gitmind
+claude plugin install gitmind@gitmind
+```
+
+If an earlier setup added the MCP server, hooks or `CLAUDE.md` block
+directly, `gitmind agents` offers to remove them; otherwise your notes load
+twice. Without plugins, add the pieces yourself:
+`claude mcp add --scope user gitmind -- gitmind`, the hooks below, and
+AGENT_MEMORY.md in `~/.claude/CLAUDE.md`.
 
 ### Codex (`~/.codex/config.toml`)
 
@@ -74,12 +90,14 @@ claude mcp add --scope user gitmind -- gitmind
 command = "gitmind"
 ```
 
-Then append [AGENT_MEMORY.md](AGENT_MEMORY.md) to `~/.claude/CLAUDE.md` and
-`~/.codex/AGENTS.md` so agents know when to search and save.
+Then append [AGENT_MEMORY.md](AGENT_MEMORY.md) to `~/.codex/AGENTS.md` so
+Codex knows when to search and save. (The plugin's skill,
+`plugin/skills/memory/SKILL.md`, is the same text; a test keeps them equal.)
 
 ### Hooks (Claude Code)
 
-Two hooks make memory automatic. Add to `~/.claude/settings.json`:
+Two hooks make memory automatic. The plugin includes them; without it, add
+to `~/.claude/settings.json`:
 
 ```json
 {

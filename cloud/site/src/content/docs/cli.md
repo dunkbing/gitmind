@@ -59,9 +59,14 @@ workspace. Without a terminal, setup uses gitmind.app.
 At the end, `setup` offers to add gitmind to the coding agents it finds,
 asking before each change:
 
-- **Claude Code**: registers the gitmind MCP server for all projects, adds
-  the two hooks below to `~/.claude/settings.json` (keeping a backup), and adds
-  memory instructions to `~/.claude/CLAUDE.md`.
+- **Claude Code**: installs the gitmind plugin for all projects. It bundles
+  the MCP server, the two hooks below, and the memory instructions as a skill
+  that loads only when relevant. To install it yourself, run
+  `/plugin install gitmind --marketplace dunkbing/gitmind` in Claude Code.
+  If an earlier version of setup added the MCP server, hooks or `CLAUDE.md`
+  instructions directly, setup offers to remove them, keeping backups;
+  otherwise your notes would load twice. With a Claude Code too old for
+  plugins, setup adds those three pieces directly instead.
 - **Codex**: adds the MCP server to `~/.codex/config.toml` and the
   instructions to `~/.codex/AGENTS.md`.
 - **Claude Code's own memories**: Claude Code keeps an "auto memory" per
@@ -71,9 +76,9 @@ asking before each change:
 
 Anything already in place is left alone. Run `gitmind agents` any time to do
 this again (for example after installing Codex), or `gitmind agents --yes` to
-skip the questions. Check the result with `claude mcp list`.
+skip the questions. Check the result with `claude plugin list`.
 
-The hooks it adds:
+The plugin's hooks:
 
 - **`gitmind context`** (SessionStart) starts every session with your
   profile (your standing `[instruction]` and `[preference]` lines, from

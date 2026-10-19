@@ -1,0 +1,8 @@
+{
+  "name": "gitmind",
+  "description": "Persistent memory for Claude Code, stored as Markdown notes in git and shared across your machines and AI apps. Needs the gitmind CLI: https://gitmind.app",
+  "author": { "name": "gitmind", "url": "https://gitmind.app" },
+  "homepage": "https://gitmind.app",
+  "repository": "https://github.com/dunkbing/gitmind",
+  "keywords": ["memory", "notes", "mcp", "git"]
+}

@@ -55,8 +55,9 @@ Commands:
                      offers to add gitmind to Claude Code and Codex, and to
                      import Claude Code's memories (--yes accepts, --no-agents
                      skips).
-  agents             add gitmind to Claude Code and Codex: MCP server, Claude
-                     Code hooks, and memory instructions; offer to import
+  agents             add gitmind to Claude Code (its plugin: MCP server, hooks,
+                     memory skill) and Codex (MCP server, instructions);
+                     offer to remove an older Claude Code setup and to import
                      Claude Code's memories (asks first; --yes)
   import claude-code copy the memories Claude Code saved on this machine
                      (~/.claude/projects/*/memory) into gitmind, one note each,
