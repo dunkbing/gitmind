@@ -36,8 +36,26 @@ and they're rewritten when a note is moved or renamed.
 
 ## When facts change
 
-Update the fact, and keep the old version under a `## History` heading with the
-date, instead of silently overwriting it.
+Replace the fact instead of silently overwriting it, and keep the old version
+under a `## History` heading with the date:
+
+```markdown
+- [decision] use Qwen3 embeddings #search
+
+## History
+
+- [decision] use bge-m3 embeddings #search (replaced 2026-10-19)
+```
+
+Agents do this with `edit_note`'s `supersede` operation. History is left out of
+search, category filters and the session-start profile, unless a search asks
+for it with `include_history`. On gitmind.app it's collapsed when a note opens.
+
+When an agent saves a fact, gitmind looks for current facts of the same
+category, in the same project and in `general/`, that are about the same thing,
+and lists them in its reply so the agent can supersede the outdated one. The
+[Inbox](/docs/review/) shows the same possible conflicts for changes waiting
+for review, with a button that moves the old fact to History.
 
 ## Pinned and locked
 

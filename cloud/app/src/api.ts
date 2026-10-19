@@ -77,6 +77,13 @@ export interface InboxItem {
 	actor: string;
 	created: number;
 	updated: number;
+	conflicts: FactConflict[]; // current facts that may conflict with what it added
+}
+
+export interface FactConflict {
+	fact: { category: string; text: string }; // added by the change
+	with: { path: string; title: string; category: string; text: string }; // already in memory
+	same: boolean; // exactly the same wording
 }
 
 export interface ReviewSettings {
@@ -138,6 +145,7 @@ export const api = {
 	inbox: (slug: string) => call<{ items: InboxItem[]; settings: ReviewSettings; sources: string[] }>("GET", `${w(slug)}/inbox`),
 	inboxCount: (slug: string) => call<{ count: number }>("GET", `${w(slug)}/inbox/count`),
 	accept: (slug: string, ids: number[] | "all") => call<{ ok: true }>("POST", `${w(slug)}/inbox/accept`, ids === "all" ? { all: true } : { ids }),
+	supersede: (slug: string, path: string, fact: string, replacement = "") => call<{ path: string }>("POST", `${w(slug)}/supersede`, { path, fact, replacement }),
 	reject: (slug: string, id: number, reason?: string) => call<{ path: string }>("POST", `${w(slug)}/inbox/${id}/reject`, { reason }),
 	setReview: (slug: string, settings: ReviewSettings) => call<ReviewSettings>("PUT", `${w(slug)}/review`, settings),
 	profile: (slug: string) => call<ProfileFact[]>("GET", `${w(slug)}/profile`),

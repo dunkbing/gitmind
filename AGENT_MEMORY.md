@@ -41,8 +41,11 @@ for context that outlives a single session.
 - Write observations as `- [category] fact #tag` and link related notes with `[[Note Title]]`.
   Categories: `decision`, `preference`, `instruction` (standing rules), `gotcha`,
   `anti-pattern`, `setup`, `task` (with its status), `artifact` (with a link to the doc or PR).
-- When a fact changes, update it, and keep the old version with its date under a `## History`
-  section instead of silently overwriting it.
+- When a fact changes, replace it with `edit_note`'s `supersede` operation: the new fact takes
+  its place and the old one moves under the note's `## History` heading with the date. Don't
+  silently overwrite it. To find why something changed, search with `include_history: true`.
+- When a save reports possibly conflicting facts, supersede the outdated one (or remove the
+  duplicate); ignore the warning if they don't actually conflict.
 - When `write_note` reports possibly overlapping notes, merge into the existing one if it's
   the same topic.
 - Pin a note (`pin_note`) only when I ask for something to be always remembered. Never change

@@ -403,3 +403,22 @@
 	background: color-mix(in srgb, #e8b339 75%, transparent);
 	box-shadow: 0 0 0 1px color-mix(in srgb, #c98a12 70%, transparent);
 }
+
+/* A collapsed History section: replaced facts, kept for the record. */
+.gm-history-fold {
+	margin: 0 0 0 10px;
+	padding: 1px 8px;
+	vertical-align: 3px;
+	font-family: var(--font-sans);
+	font-weight: 400;
+	border: 1px solid var(--line);
+	border-radius: 999px;
+	background: transparent;
+	color: var(--ink-muted);
+	font-size: 12.5px;
+	cursor: pointer;
+}
+.gm-history-fold:hover {
+	color: var(--ink);
+	border-color: var(--ink-muted);
+}

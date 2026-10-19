@@ -11,6 +11,7 @@ import { EditorView, drawSelection, keymap, placeholder } from "@codemirror/view
 import { tags as t } from "@lezer/highlight";
 import { useEffect, useRef } from "react";
 import { frontmatter } from "./frontmatter";
+import { foldHistory, historyFolding } from "./historyFold";
 import { linkClicks, livePreview } from "./livePreview";
 import { searchPanel } from "./searchPanel";
 
@@ -90,6 +91,7 @@ export function Editor(p: EditorProps) {
 			EditorView.lineWrapping,
 			markdown({ base: markdownLanguage, addKeymap: true, extensions: [frontmatter] }),
 			syntaxHighlighting(highlight),
+			historyFolding,
 			p.mode === "source" ? EditorView.editorAttributes.of({ class: "gm-source" }) : livePreview,
 			search({ top: true, createPanel: searchPanel }),
 			highlightSelectionMatches({ minSelectionLength: 3 }),
@@ -121,6 +123,7 @@ export function Editor(p: EditorProps) {
 		const v = new EditorView({ parent: host.current!, state: EditorState.create({ doc: p.value, extensions }) });
 		view.current = v;
 		if (p.viewRef) p.viewRef.current = v;
+		if (p.mode !== "source") foldHistory(v);
 		if (p.autoFocus) v.focus();
 		return () => {
 			v.destroy();

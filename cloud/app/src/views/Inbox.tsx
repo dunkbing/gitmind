@@ -1,12 +1,13 @@
 // The inbox: what AI apps changed in your memory, for review. Changes are
 // already in effect (agents need them right away); accepting keeps one,
 // rejecting undoes it, and a reason for rejecting teaches agents through a
-// pinned "Memory feedback" note.
+// pinned "Memory feedback" note. A change whose new facts may conflict with
+// facts already in memory lists them, with a way to retire the old one.
 
-import { Check, ExternalLink, FilePlus2, FileMinus2, FilePen, Inbox as InboxIcon, X } from "lucide-react";
+import { Check, ExternalLink, FilePlus2, FileMinus2, FilePen, Inbox as InboxIcon, TriangleAlert, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { parse } from "../../../src/engine/notes";
-import { type InboxItem, type ReviewSettings, type Workspace, api } from "../api";
+import { type FactConflict, type InboxItem, type ReviewSettings, type Workspace, api } from "../api";
 import { diffLines, hunks } from "../diff";
 import { ago } from "../notes";
 import { Link, noteUrl, wsUrl } from "../router";
@@ -15,6 +16,8 @@ import { forgetNote, loadInboxCount, loadNotes, toast } from "../store";
 export function InboxView({ ws }: { ws: Workspace }) {
 	const [data, setData] = useState<{ items: InboxItem[]; settings: ReviewSettings; sources: string[] } | null>(null);
 	const [error, setError] = useState("");
+	const [onlyConflicts, setOnlyConflicts] = useState(false);
+	const withConflicts = data?.items.filter((i) => i.conflicts.length > 0).length ?? 0;
 	const reload = () =>
 		api.inbox(ws.slug).then(
 			(d) => {
@@ -51,11 +54,23 @@ export function InboxView({ ws }: { ws: Workspace }) {
 					<h1 className="view-title">Inbox</h1>
 					<p className="mt-1 text-[14px] text-muted">What AI apps saved to your memory. It's already in use: accept what's right, reject what isn't.</p>
 				</div>
-				{data && data.items.length > 1 && (
-					<button className="btn-outline shrink-0" onClick={acceptAll}>
-						<Check size={14} /> Accept all
-					</button>
-				)}
+				<div className="flex shrink-0 items-center gap-2">
+					{withConflicts > 0 && (
+						<button
+							className={onlyConflicts ? "btn" : "btn-outline"}
+							aria-pressed={onlyConflicts}
+							onClick={() => setOnlyConflicts((v) => !v)}
+							title="Changes whose new facts may contradict or repeat facts already in memory"
+						>
+							<TriangleAlert size={14} /> Possible conflicts ({withConflicts})
+						</button>
+					)}
+					{data && data.items.length > 1 && (
+						<button className="btn-outline" onClick={acceptAll}>
+							<Check size={14} /> Accept all
+						</button>
+					)}
+				</div>
 			</div>
 			{error && <p className="mt-6 text-danger">{error}</p>}
 			{!data && !error && <p className="mt-8 animate-pulse text-muted">Loading…</p>}
@@ -72,9 +87,11 @@ export function InboxView({ ws }: { ws: Workspace }) {
 				</div>
 			)}
 			<div className="mt-6 flex flex-col gap-4">
-				{data?.items.map((item) => (
-					<Item key={item.id} ws={ws} item={item} onDone={() => done(item.id)} />
-				))}
+				{data?.items
+					.filter((item) => !onlyConflicts || item.conflicts.length > 0)
+					.map((item) => (
+						<Item key={item.id} ws={ws} item={item} onDone={() => done(item.id)} />
+					))}
 			</div>
 		</div>
 	);
@@ -136,6 +153,7 @@ function Item({ ws, item, onDone }: { ws: Workspace; item: InboxItem; onDone: ()
 					),
 				)}
 			</div>
+			{item.conflicts.length > 0 && <Conflicts ws={ws} conflicts={item.conflicts} />}
 			<footer className="flex flex-wrap items-center gap-2 border-t border-line px-4 py-2.5">
 				{!rejecting ? (
 					<>
@@ -177,5 +195,54 @@ function Item({ ws, item, onDone }: { ws: Workspace; item: InboxItem; onDone: ()
 				)}
 			</footer>
 		</article>
+	);
+}
+
+// Conflicts lists facts already in memory that a change's new facts may
+// replace or repeat. Retiring one moves it to its note's History.
+function Conflicts({ ws, conflicts }: { ws: Workspace; conflicts: FactConflict[] }) {
+	const [retired, setRetired] = useState<string[]>([]);
+	const key = (c: FactConflict) => `${c.with.path}\0${c.with.category}\0${c.with.text}`;
+	const open = conflicts.filter((c) => !retired.includes(key(c)));
+	if (!open.length) return null;
+
+	const retire = async (c: FactConflict) => {
+		try {
+			await api.supersede(ws.slug, c.with.path, `[${c.with.category}] ${c.with.text}`);
+			forgetNote(ws.slug, c.with.path);
+			setRetired((r) => [...r, key(c)]);
+			toast(`Moved to History in ${c.with.title}`);
+		} catch (e) {
+			toast((e as Error).message, true);
+		}
+	};
+
+	return (
+		<section className="border-t border-line px-4 py-3">
+			<p className="flex items-center gap-1.5 text-[13px] font-medium">
+				<TriangleAlert size={14} className="text-muted" /> May conflict with what's already in memory
+			</p>
+			<ul className="mt-2 flex flex-col gap-3">
+				{open.map((c) => (
+					<li key={key(c)} className="text-[13px] leading-snug">
+						<div>
+							<span className="text-muted">New:</span> [{c.fact.category}] {c.fact.text}
+						</div>
+						<div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+							<span className="min-w-0 flex-1">
+								<span className="text-muted">
+									In <Link href={noteUrl(ws.slug, c.with.path)}>{c.with.title}</Link>:
+								</span>{" "}
+								[{c.with.category}] {c.with.text}
+								{c.same && <span className="text-muted"> (same wording)</span>}
+							</span>
+							<button className="btn-ghost" onClick={() => retire(c)} title="The newer fact replaces it; it's kept under the note's History heading">
+								Move old to History
+							</button>
+						</div>
+					</li>
+				))}
+			</ul>
+		</section>
 	);
 }

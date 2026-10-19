@@ -133,13 +133,13 @@ as AGENT_MEMORY.md tells them to.
 
 | Tool | What it does |
 |---|---|
-| `search_notes` | Full-text search (SQLite FTS5, BM25; title > tags > body; notes with every word first, recent notes slightly favoured), filterable by directory, tags (frontmatter or inline `#tags`), observation category (`[decision]`, shown line by line) and update date (`since: 7d`) |
+| `search_notes` | Full-text search (SQLite FTS5, BM25; title > tags > body; notes with every word first, recent notes slightly favoured), filterable by directory, tags (frontmatter or inline `#tags`), observation category (`[decision]`, shown line by line) and update date (`since: 7d`); facts under `## History` only with `include_history` |
 | `read_note` | Read a note by path, permalink or title, with its backlinks |
 | `build_context` | A note plus the notes it links to and from, and links to notes not written yet (`depth: 2` goes one step further) |
 | `project_context` | Your profile, pinned notes, and an index of a project's notes, general notes and recent activity, for the start of a session (`budget` sets the size) |
 | `write_note` | Create a note (the reply lists possibly overlapping notes, to merge instead of duplicating); replacing an existing one needs `overwrite: true` |
 | `pin_note` | Show a note in full at every session start (or unpin it) |
-| `edit_note` | `append`, `prepend`, `find_replace`, or `replace_section` (everything under a heading, added if missing) |
+| `edit_note` | `append`, `prepend`, `find_replace`, `replace_section` (everything under a heading, added if missing), or `supersede` (replace a fact, keeping the old one under `## History` with the date) |
 | `move_note` | New directory and/or title; links to the note are updated, and git history follows the rename |
 | `delete_note` | Delete a note (git history keeps it) |
 | `recent_activity` | Most recently changed notes |

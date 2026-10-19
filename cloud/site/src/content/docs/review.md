@@ -36,6 +36,15 @@ For each change you can:
 
 Your own changes in the web app never go to the Inbox.
 
+## Possible conflicts
+
+When a change adds a fact that may contradict or repeat one already in memory
+(same category, about the same thing, in the same project or `general/`), the
+change lists it under **May conflict with what's already in memory**. **Move
+old to History** retires the old fact into its note's `## History` section,
+with the date. The **Possible conflicts** button at the top shows only those
+changes.
+
 ## Provenance in git
 
 Every commit says where a change came from: `memory: edit dev/stack.md (cloud,

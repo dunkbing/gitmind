@@ -172,6 +172,19 @@ appApi.post("/w/:slug/inbox/accept", async (c) => {
 	return c.json({ ok: true });
 });
 
+// Moves a fact to its note's History, optionally replacing it: for a fact
+// that a newer one in the inbox makes outdated.
+appApi.post("/w/:slug/supersede", async (c) => {
+	const ws = await workspace(c);
+	if (!ws) return noWorkspace(c);
+	const b = await c.req.json<{ path: string; fact: string; replacement?: string }>();
+	const r = await workspaceStub(c.env, ws).edit(
+		{ identifier: b.path, operation: "supersede", findText: b.fact, content: b.replacement ?? "" },
+		actorOf(c.get("user")),
+	);
+	return c.json({ path: r.path });
+});
+
 appApi.post("/w/:slug/inbox/:id/reject", async (c) => {
 	const ws = await workspace(c);
 	if (!ws) return noWorkspace(c);

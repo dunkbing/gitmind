@@ -454,9 +454,15 @@ export class Workspace extends DurableObject<Env> {
 		return r.enabled && !r.trusted.includes(source);
 	}
 
-	async inbox(): Promise<{ items: InboxItem[]; settings: ReviewSettings; sources: string[] }> {
+	// inbox lists changes to review, each with the current facts that may
+	// conflict with what it added.
+	async inbox(): Promise<{ items: (InboxItem & { conflicts: Conflict[] })[]; settings: ReviewSettings; sources: string[] }> {
 		await this.fresh();
-		return { items: this.store.inbox(), settings: this.reviewSettings(), sources: JSON.parse(this.store.meta("review_sources") ?? "[]") };
+		const items = this.store.inbox().map((item) => {
+			const body = (c: string | null) => (c === null ? "" : parse(item.path, c).body);
+			return { ...item, conflicts: item.after === null ? [] : this.conflicts(item.path, newFacts(body(item.before), body(item.after))) };
+		});
+		return { items, settings: this.reviewSettings(), sources: JSON.parse(this.store.meta("review_sources") ?? "[]") };
 	}
 
 	async inboxCount(): Promise<number> {
