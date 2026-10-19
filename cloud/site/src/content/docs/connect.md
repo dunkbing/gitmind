@@ -43,7 +43,9 @@ In `~/.codex/config.toml`:
 url = "https://gitmind.app/mcp"
 ```
 
-Then run `codex mcp login gitmind`.
+Then run `codex mcp login gitmind`. With the [CLI](/docs/cli/) installed, the
+gitmind plugin for Codex adds a hook that loads your notes when a session
+starts.
 
 ## Which workspace do agents use?
 

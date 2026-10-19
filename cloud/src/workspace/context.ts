@@ -85,6 +85,10 @@ export function profile(store: Store, project: string, skip: Set<string> = new S
 // sessionContext renders pinned notes in full, then a one-line index of the
 // project's notes, general notes and recent activity, within roughly budget
 // characters.
+// handoffPath is where a project's handoff lives: one note per project,
+// replaced by each session that stops with work unfinished.
+export const handoffPath = (project: string) => `${project}/handoff.md`;
+
 export function sessionContext(store: Store, project: string, budget: number): string {
 	const byNewest = (hits: Hit[]) => hits.sort((a, b) => b.updated - a.updated);
 	const projectNotes = project ? byNewest(store.list(project)) : [];
@@ -104,7 +108,10 @@ export function sessionContext(store: Store, project: string, budget: number): s
 	const facts = profile(store, project, pinned);
 	if (facts.length) {
 		b += "\n## Profile: how the user works\n";
-		b += "Standing instructions and preferences from the notes, newest first. Follow them unless the user says otherwise.\n";
+		b +=
+			"Standing instructions and preferences from the notes, newest first. They're defaults: the user's current " +
+			"instructions and the repository's own rules (CLAUDE.md, AGENTS.md) come first. When a choice rests on one of these, " +
+			"say so briefly so the user can correct it.\n";
 		let left = 0;
 		facts.forEach((f, i) => {
 			const line = `- [${f.category}] ${f.text} (${f.title})\n`;
@@ -114,8 +121,21 @@ export function sessionContext(store: Store, project: string, budget: number): s
 		if (left > 0) b += `- … and ${left} more (search_notes category "instruction" or "preference")\n`;
 	}
 
-	// Pinned notes fill up to three quarters of the budget.
 	const shown = new Set<string>();
+	// The project's handoff: where the last session left off, in full.
+	const handoff = project ? store.read(handoffPath(project)) : null;
+	if (handoff) {
+		let body = handoff.note.body.trim();
+		if ([...body].length > MAX_NOTE_CHARS) body = [...body].slice(0, MAX_NOTE_CHARS).join("") + `\n… (truncated; read_note ${handoffPath(project)} for the rest)`;
+		b += `\n## Where we left off (${new Date(handoff.updated).toISOString().slice(0, 10)})\n`;
+		b +=
+			"The last session's handoff. When the user asks to continue, start from it. When you stop with work unfinished, " +
+			"replace it with handoff; when the work is done, clear it (handoff with empty content).\n\n";
+		b += body + "\n";
+		shown.add(handoffPath(project));
+	}
+
+	// Pinned notes fill up to three quarters of the budget.
 	let pinnedHeading = false;
 	for (const h of [...projectNotes, ...general]) {
 		if (!h.pinned) continue;

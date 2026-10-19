@@ -28,12 +28,15 @@ Ask Claude to remember something:
 > Remember that this project deploys from the `release` branch, never `main`.
 
 It saves a note, and you'll see it in your workspace on gitmind.app. In a new
-conversation, ask what it knows about deploying, and it finds the note.
+conversation, ask what it knows about deploying, and it finds the note. In a
+coding agent, open a project and ask: "What do you remember about this
+project?"
 
 ## 4. Optional: tell agents how to use memory
 
-Agents use gitmind better with a few standing instructions. Add the text from
+Agents use gitmind better with a few standing instructions: search memory at
+the start of a task, save durable facts at the end, leave a handoff when work
+is unfinished, and never save secrets. The Claude Code and Codex plugins (see
+[CLI and local sync](/docs/cli/)) include them. Elsewhere, add the text from
 [`AGENT_MEMORY.md`](https://github.com/dunkbing/gitmind/blob/main/AGENT_MEMORY.md)
-to your Claude project instructions, `~/.claude/CLAUDE.md` or `~/.codex/AGENTS.md`:
-search memory at the start of a task, save durable facts at the end, and never
-save secrets.
+to your Claude project instructions.

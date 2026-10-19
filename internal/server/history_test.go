@@ -96,3 +96,47 @@ func TestFactsThatChange(t *testing.T) {
 		t.Errorf("category filter showed a replaced decision:\n%s", out)
 	}
 }
+
+func TestHandoff(t *testing.T) {
+	app := testApp(t)
+	ctx := context.Background()
+	ct, st := mcp.NewInMemoryTransports()
+	if _, err := New(app, "test").Connect(ctx, st, nil); err != nil {
+		t.Fatal(err)
+	}
+	cs, err := mcp.NewClient(&mcp.Implementation{Name: "claude-code"}, nil).Connect(ctx, ct, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cs.Close()
+
+	call(t, cs, "write_note", map[string]any{"title": "Stack", "directory": "shop", "content": "- [decision] Postgres"}, false)
+	if out := call(t, cs, "handoff", map[string]any{"project": "shop",
+		"content": "Migrating orders to SQLite: schema done, backfill fails on NULL prices.\nNext: fix the backfill, then switch reads."}, false); !strings.Contains(out, "shop/handoff.md") {
+		t.Errorf("handoff: %s", out)
+	}
+	out, err := app.SessionContext("shop", 8000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	section := out[strings.Index(out, "## Where we left off"):]
+	if !strings.Contains(section, "backfill fails on NULL prices") || !strings.Contains(section, "_Left by ") {
+		t.Errorf("session context:\n%s", out)
+	}
+	if strings.Count(out, "handoff.md") > 0 && strings.Contains(out[strings.Index(out, "## Project notes"):], "Handoff") {
+		t.Errorf("the handoff is also listed in the index:\n%s", out)
+	}
+	// Other projects don't see it.
+	if other, _ := app.SessionContext("blog", 8000); strings.Contains(other, "Where we left off") {
+		t.Errorf("another project got the handoff:\n%s", other)
+	}
+
+	// Done: clearing removes it.
+	if out := call(t, cs, "handoff", map[string]any{"project": "shop", "content": ""}, false); !strings.Contains(out, "Cleared") {
+		t.Errorf("clear: %s", out)
+	}
+	if out, _ := app.SessionContext("shop", 8000); strings.Contains(out, "Where we left off") {
+		t.Errorf("cleared handoff still shown:\n%s", out)
+	}
+	call(t, cs, "handoff", map[string]any{"project": "", "content": "x"}, true)
+}

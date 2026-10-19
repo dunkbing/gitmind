@@ -96,14 +96,22 @@ func (a *agentSetup) Run(ctx context.Context) error {
 		}
 	}
 	if codex {
-		if err := a.codexMCP(ctx); err != nil {
-			return err
-		}
-		if err := a.instructions(ctx, "Codex", filepath.Join(a.home, ".codex", "AGENTS.md")); err != nil {
+		if err := a.codex(ctx); err != nil {
 			return err
 		}
 	}
+	fmt.Fprintln(a.out, "\nTo check it works, restart your agent in a project and ask it: \"What do you remember about this project?\"")
 	return nil
+}
+
+func (a *agentSetup) codex(ctx context.Context) error {
+	if list, ok := a.codexPlugins(); ok {
+		return a.codexPlugin(ctx, list)
+	}
+	if err := a.codexMCP(ctx); err != nil {
+		return err
+	}
+	return a.instructions(ctx, "Codex", a.agentsMD())
 }
 
 // has reports whether an agent is installed: its CLI is on PATH or its
@@ -180,13 +188,140 @@ func (a *agentSetup) claudePlugin(ctx context.Context, list string) error {
 		}
 		fmt.Fprintln(a.out, "✓ Installed the gitmind plugin for Claude Code")
 	}
-	// The plugin runs `gitmind` from PATH, unlike the old setup's absolute path.
+	a.checkPath()
+	return a.removeOldClaudeSetup(ctx)
+}
+
+// checkPath warns when the plugins, which run `gitmind` from PATH (unlike
+// the old setup's absolute path), won't find this binary.
+func (a *agentSetup) checkPath() {
 	if path, err := a.lookPath("gitmind"); err != nil {
 		fmt.Fprintf(a.out, "• gitmind isn't on your PATH, so the plugin can't start it. Add %s to PATH.\n", filepath.Dir(a.exe))
 	} else if resolved, err := filepath.EvalSymlinks(path); err == nil && resolved != a.exe {
 		fmt.Fprintf(a.out, "• The plugin will run %s, not this gitmind (%s).\n", path, a.exe)
 	}
-	return a.removeOldClaudeSetup(ctx)
+}
+
+func (a *agentSetup) codexConfig() string { return filepath.Join(a.home, ".codex", "config.toml") }
+func (a *agentSetup) agentsMD() string    { return filepath.Join(a.home, ".codex", "AGENTS.md") }
+
+// codexPlugins lists Codex's plugins as JSON; ok is false when its CLI
+// isn't on PATH or predates plugins.
+func (a *agentSetup) codexPlugins() (list string, ok bool) {
+	if _, err := a.lookPath("codex"); err != nil {
+		return "", false
+	}
+	list, err := a.run("codex", "plugin", "list", "--json")
+	return list, err == nil
+}
+
+// codexPlugin installs gitmind's Codex plugin (MCP server, session-start
+// hook, memory skill), then offers to remove what earlier versions of setup
+// wrote into Codex's files.
+func (a *agentSetup) codexPlugin(ctx context.Context, list string) error {
+	var plugins struct {
+		Installed []struct {
+			ID string `json:"pluginId"`
+		} `json:"installed"`
+	}
+	json.Unmarshal([]byte(list), &plugins)
+	has := false
+	for _, p := range plugins.Installed {
+		has = has || p.ID == pluginID
+	}
+	if has {
+		fmt.Fprintln(a.out, "✓ Codex already has the gitmind plugin")
+	} else {
+		ok, err := a.ask(ctx, "Install the gitmind plugin for Codex? It loads your notes when a session starts.")
+		if err != nil || !ok {
+			return err
+		}
+		if _, err := a.run("codex", "plugin", "marketplace", "add", pluginMarketplace); err != nil {
+			fmt.Fprintf(a.out, "✗ couldn't add gitmind's plugin marketplace to Codex: %v\n", err)
+			return nil
+		}
+		if _, err := a.run("codex", "plugin", "add", pluginID); err != nil {
+			fmt.Fprintf(a.out, "✗ couldn't install the Codex plugin: %v\n", err)
+			return nil
+		}
+		fmt.Fprintln(a.out, "✓ Installed the gitmind plugin for Codex. In Codex, open /hooks once to trust its session-start hook.")
+	}
+	a.checkPath()
+	return a.removeOldCodexSetup(ctx)
+}
+
+// removeOldCodexSetup offers to remove the MCP server and AGENTS.md block
+// that setup added before the plugin existed; the server would clash with
+// the plugin's, which has the same name.
+func (a *agentSetup) removeOldCodexSetup(ctx context.Context) error {
+	var found []string
+	config := a.codexConfig()
+	toml, err := os.ReadFile(config)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	newTOML, inTOML := withoutTOMLTable(string(toml), "mcp_servers.gitmind")
+	if inTOML {
+		found = append(found, "the gitmind MCP server in "+tildePath(a.home, config))
+	}
+	agentsMD := a.agentsMD()
+	md, err := os.ReadFile(agentsMD)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	newMD, inMD := withoutAgentMemory(string(md))
+	if inMD {
+		found = append(found, "memory instructions in "+tildePath(a.home, agentsMD))
+	}
+	if len(found) == 0 {
+		return nil
+	}
+	ok, err := a.ask(ctx, fmt.Sprintf("Remove what an earlier gitmind setup added to Codex (%s)? The plugin replaces it.", joinList(found)))
+	if err != nil || !ok {
+		return err
+	}
+	for _, f := range []struct {
+		path, content, label string
+		found                bool
+		old                  []byte
+	}{{config, newTOML, "the gitmind MCP server from", inTOML, toml}, {agentsMD, newMD, "gitmind's memory instructions from", inMD, md}} {
+		if !f.found {
+			continue
+		}
+		if err := os.WriteFile(f.path+".bak", f.old, 0o644); err != nil {
+			return err
+		}
+		if err := os.WriteFile(f.path, []byte(f.content), 0o644); err != nil {
+			return err
+		}
+		fmt.Fprintf(a.out, "✓ Removed %s %s (backup: %s.bak)\n", f.label, tildePath(a.home, f.path), filepath.Base(f.path))
+	}
+	return nil
+}
+
+// withoutTOMLTable removes the table [name] and its subtables ([name.x])
+// from a TOML file, up to the next other table.
+func withoutTOMLTable(toml, name string) (string, bool) {
+	var out []string
+	skipping, found := false, false
+	for _, line := range strings.Split(toml, "\n") {
+		if t := strings.TrimSpace(line); strings.HasPrefix(t, "[") {
+			header := strings.Trim(t, "[] ")
+			skipping = header == name || strings.HasPrefix(header, name+".")
+			found = found || skipping
+		}
+		if !skipping {
+			out = append(out, line)
+		}
+	}
+	if !found {
+		return toml, false
+	}
+	s := strings.TrimRight(strings.Join(out, "\n"), "\n")
+	if s != "" {
+		s += "\n"
+	}
+	return s, true
 }
 
 // removeOldClaudeSetup offers to remove the MCP server, hooks and CLAUDE.md
@@ -462,7 +597,7 @@ func hasHook(groups []map[string]any, words ...string) bool {
 }
 
 func (a *agentSetup) codexMCP(ctx context.Context) error {
-	path := filepath.Join(a.home, ".codex", "config.toml")
+	path := a.codexConfig()
 	data, err := os.ReadFile(path)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err

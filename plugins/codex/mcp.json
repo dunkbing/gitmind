@@ -1,0 +1,5 @@
+{
+  "mcpServers": {
+    "gitmind": { "type": "stdio", "command": "gitmind" }
+  }
+}

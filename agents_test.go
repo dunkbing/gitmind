@@ -280,17 +280,77 @@ func TestWithoutAgentMemory(t *testing.T) {
 	}
 }
 
-// The plugin's memory skill is AGENT_MEMORY.md under a frontmatter, so the
+// The plugins' memory skill is AGENT_MEMORY.md under a frontmatter, so the
 // two can't drift apart.
 func TestPluginSkillMatchesAgentMemory(t *testing.T) {
 	// Windows checkouts may convert line endings.
 	crlf := strings.NewReplacer("\r\n", "\n")
-	skill := crlf.Replace(read(t, filepath.Join("plugin", "skills", "memory", "SKILL.md")))
-	parts := strings.SplitN(skill, "\n---\n\n", 2)
-	if len(parts) != 2 || !strings.HasPrefix(skill, "---\n") {
-		t.Fatalf("SKILL.md has no frontmatter:\n%s", skill)
+	for _, agent := range []string{"claude-code", "codex"} {
+		path := filepath.Join("plugins", agent, "skills", "memory", "SKILL.md")
+		skill := crlf.Replace(read(t, path))
+		parts := strings.SplitN(skill, "\n---\n\n", 2)
+		if len(parts) != 2 || !strings.HasPrefix(skill, "---\n") {
+			t.Fatalf("%s has no frontmatter:\n%s", path, skill)
+		}
+		if parts[1] != agentMemory {
+			t.Errorf("%s differs from AGENT_MEMORY.md; copy AGENT_MEMORY.md under its frontmatter", path)
+		}
 	}
-	if parts[1] != agentMemory {
-		t.Error("plugin/skills/memory/SKILL.md differs from AGENT_MEMORY.md; copy AGENT_MEMORY.md under its frontmatter")
+}
+
+func TestAgentSetupInstallsCodexPluginAndRemovesOldSetup(t *testing.T) {
+	a, calls, out := fakeAgents(t, "y\ny\n")
+	a.lookPath = func(name string) (string, error) {
+		if name == "claude" {
+			return "", errors.New("not found")
+		}
+		return "/usr/bin/" + name, nil
+	}
+	installed := false
+	a.run = func(name string, args ...string) (string, error) {
+		cmd := strings.Join(args, " ")
+		*calls = append(*calls, name+" "+cmd)
+		switch {
+		case cmd == "plugin list --json" && installed:
+			return `{"installed": [{"pluginId": "gitmind@gitmind"}], "available": []}`, nil
+		case cmd == "plugin list --json":
+			return `{"installed": [], "available": []}`, nil
+		case strings.HasPrefix(cmd, "plugin add"):
+			installed = true
+		}
+		return "", nil
+	}
+	config := filepath.Join(a.home, ".codex", "config.toml")
+	write(t, config, "model = \"gpt-5\"\n\n[mcp_servers.gitmind]\ncommand = \"/opt/go bin/gitmind\"\n\n[mcp_servers.gitmind.env]\nX = \"1\"\n\n[mcp_servers.other]\ncommand = \"other\"\n")
+	agentsMD := filepath.Join(a.home, ".codex", "AGENTS.md")
+	write(t, agentsMD, "codex rules\n\n"+agentMemory)
+
+	if err := a.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	all := strings.Join(*calls, "\n")
+	for _, want := range []string{"codex plugin marketplace add dunkbing/gitmind", "codex plugin add gitmind@gitmind"} {
+		if !strings.Contains(all, want) {
+			t.Errorf("codex calls don't include %q:\n%s", want, all)
+		}
+	}
+	if got := read(t, config); got != "model = \"gpt-5\"\n\n[mcp_servers.other]\ncommand = \"other\"\n" {
+		t.Errorf("config.toml:\n%s", got)
+	}
+	if got := read(t, agentsMD); got != "codex rules\n" {
+		t.Errorf("AGENTS.md:\n%s", got)
+	}
+	if !strings.Contains(out.String(), "/hooks") {
+		t.Errorf("didn't say to trust the hook:\n%s", out.String())
+	}
+
+	// Run again: nothing left to do or ask.
+	out.Reset()
+	a.in = bufio.NewReader(strings.NewReader(""))
+	if err := a.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "Codex already has the gitmind plugin") || strings.Contains(out.String(), "[Y/n]") {
+		t.Errorf("second run:\n%s", out.String())
 	}
 }

@@ -47,3 +47,25 @@ describe("facts that change", () => {
 		expect(out).toContain("use Qwen3 embeddings for semantic search");
 	});
 });
+
+describe("handoff", () => {
+	it("tells the project's next session where the last one left off, until the work is done", async () => {
+		const ola = await signedIn("ola");
+		const { token } = await connect(ola, { clientName: "Claude Code" });
+		await tool(token, "write_note", { title: "Stack", directory: "shop", content: "- [decision] Postgres" });
+		let out = (await tool(token, "handoff", { project: "shop", content: "Migrating orders to SQLite: backfill fails on NULL prices.\nNext: fix the backfill." })).text;
+		expect(out).toContain("shop/handoff.md");
+
+		const ctx = (await tool(token, "project_context", { project: "shop" })).text;
+		const section = ctx.slice(ctx.indexOf("## Where we left off"));
+		expect(section).toContain("backfill fails on NULL prices");
+		expect(section).toContain("_Left by Claude Code");
+		expect(ctx.slice(ctx.indexOf("## Project notes"))).not.toContain("Handoff");
+		expect((await tool(token, "project_context", { project: "blog" })).text).not.toContain("Where we left off");
+
+		out = (await tool(token, "handoff", { project: "shop", content: "" })).text;
+		expect(out).toContain("Cleared");
+		expect((await tool(token, "project_context", { project: "shop" })).text).not.toContain("Where we left off");
+		expect((await tool(token, "handoff", { project: "", content: "x" })).isError).toBe(true);
+	});
+});

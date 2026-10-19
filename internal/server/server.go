@@ -24,7 +24,8 @@ Write facts as "- [category] fact #tag" with categories such as decision, prefer
 like "from now on..."), gotcha, anti-pattern, setup, task (with status), artifact (with a link).
 When a fact changes, replace it with edit_note's supersede operation, which keeps the old version under "## History" with
 the date, rather than silently overwriting it. When a save reports possibly conflicting facts, supersede the outdated one.
-Prefer editing an existing note over creating a near-duplicate. Notes marked locked are the user's.`
+Prefer editing an existing note over creating a near-duplicate. Notes marked locked are the user's.
+When you stop with work unfinished, leave a handoff for the next session (in any app): where it stands, what failed, what's next.`
 
 // SearchArgs are search_notes' arguments.
 type SearchArgs struct {
@@ -81,6 +82,11 @@ type editArgs struct {
 	FindText             string `json:"find_text,omitempty" jsonschema:"find_replace: text to replace; supersede: the current fact to replace, e.g. '[decision] use bge-m3' (list marker, case and trailing #tags don't matter)"`
 	ExpectedReplacements int    `json:"expected_replacements,omitempty" jsonschema:"fail unless find_text occurs exactly this many times"`
 	Section              string `json:"section,omitempty" jsonschema:"heading text whose content to replace (replace_section only); its subsections are replaced too"`
+}
+
+type handoffArgs struct {
+	Project string `json:"project" jsonschema:"project name: the git repository's directory name"`
+	Content string `json:"content" jsonschema:"a few lines: what you were doing, what failed or is undecided, the next steps; empty to clear the handoff once the work is done"`
 }
 
 type moveArgs struct {
@@ -264,6 +270,25 @@ func New(app *memory.App, version string, opts ...Option) *mcp.Server {
 			msg = "Edited " + res.Path + ": the new fact replaced the old one, which moved to History"
 		}
 		return text(msg + conflictsText(app, res.Path, res.Added)), nil, nil
+	})
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name: "handoff",
+		Description: "Leave a handoff for the next session in this project, whichever app or agent it runs in: " +
+			"where the work stands, what failed, what's next. It replaces the previous handoff, and the next session sees it " +
+			"at the start. Call it when you stop with work unfinished; clear it (empty content) when the work is done.",
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, in handoffArgs) (*mcp.CallToolResult, any, error) {
+		rel, err := app.Handoff(ctx, in.Project, in.Content)
+		if err != nil {
+			return nil, nil, err
+		}
+		switch {
+		case strings.TrimSpace(in.Content) != "":
+			return text("Saved the handoff in " + rel), nil, nil
+		case rel != "":
+			return text("Cleared the handoff (" + rel + ")"), nil, nil
+		}
+		return text("There was no handoff to clear"), nil, nil
 	})
 
 	mcp.AddTool(s, &mcp.Tool{

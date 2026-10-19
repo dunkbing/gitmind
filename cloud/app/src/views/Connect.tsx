@@ -66,6 +66,9 @@ export function ConnectApps() {
 					Windows (PowerShell): <code>irm https://gitmind.app/install.ps1 | iex</code>
 				</p>
 			</App>
+			<p className="mt-6 text-[14px]">
+				To check it works, start a new chat or session and ask: <em>"What do you remember about this project?"</em>
+			</p>
 		</>
 	);
 }

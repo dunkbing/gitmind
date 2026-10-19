@@ -67,8 +67,11 @@ asking before each change:
   instructions directly, setup offers to remove them, keeping backups;
   otherwise your notes would load twice. With a Claude Code too old for
   plugins, setup adds those three pieces directly instead.
-- **Codex**: adds the MCP server to `~/.codex/config.toml` and the
-  instructions to `~/.codex/AGENTS.md`.
+- **Codex**: installs the gitmind plugin (the MCP server, a session-start
+  hook and the memory skill); open `/hooks` in Codex once to trust the hook.
+  Like for Claude Code, it offers to remove what an earlier setup added
+  (`~/.codex/config.toml` and `~/.codex/AGENTS.md`). With a Codex too old
+  for plugins, it adds those two directly instead.
 - **Claude Code's own memories**: Claude Code keeps an "auto memory" per
   project on each machine (`~/.claude/projects/*/memory`), which doesn't
   follow you anywhere else. When it finds some, setup offers to import them

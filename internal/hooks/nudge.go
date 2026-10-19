@@ -22,7 +22,8 @@ const nudgeText = `Before you finish: this session did substantial work. If it p
 	`would otherwise have to rediscover, save it to memory now with gitmind (search first and update an existing ` +
 	`note rather than duplicating). Worth saving: decisions and their reasons, the user's preferences and corrections, ` +
 	`gotchas and root causes, setup or deploy knowledge not in the repo. Not worth saving: routine steps, anything ` +
-	`already in the code or git history, unconfirmed suggestions, secrets. If nothing qualifies, just stop; don't save noise.`
+	`already in the code or git history, unconfirmed suggestions, secrets. If the work is unfinished, also leave a ` +
+	`handoff (the handoff tool): where it stands and what's next. If nothing qualifies, just stop; don't save noise.`
 
 // Nudge decides whether to remind the agent to save to memory before it
 // stops: when at least threshold tool calls happened since the last memory
@@ -102,7 +103,7 @@ func isMemoryWrite(tool string) bool {
 	if !strings.HasPrefix(tool, "mcp__") {
 		return false
 	}
-	for _, suffix := range []string{"__write_note", "__edit_note", "__move_note"} {
+	for _, suffix := range []string{"__write_note", "__edit_note", "__move_note", "__handoff"} {
 		if strings.HasSuffix(tool, suffix) {
 			return true
 		}

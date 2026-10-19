@@ -18,8 +18,9 @@ for context that outlives a single session.
   open it with `build_context` to see the related notes too, before planning.
 - To review past decisions or known pitfalls, filter instead of guessing keywords:
   `search_notes` with `category: "decision"` (or `gotcha`), `directory`, `tags` or `since: "30d"`.
-- When I say "continue", "pick up where we left off" or similar, check `recent_activity`
-  first.
+- When I say "continue", "pick up where we left off" or similar, start from the project's
+  handoff ("Where we left off" in the session context, or `read_note <project>/handoff.md`),
+  then check `recent_activity`.
 
 **While working**
 - Don't save routine chatter, code that is already in the repo, or anything git history
@@ -30,6 +31,10 @@ for context that outlives a single session.
 - my preferences and corrections to how you work, and standing rules ("from now on…")
 - gotchas, root causes of non-obvious bugs, environment quirks, approaches that failed
 - project setup and deploy/ops knowledge not written down in the repo
+
+**When you stop with work unfinished**, call `handoff` with a few lines for the next session,
+which may run in another app or agent: what you were doing, what failed or is undecided, the
+next steps. It replaces the previous handoff. Clear it (empty content) once the work is done.
 
 **What not to save** (prefer saving nothing over saving noise)
 - Facts that only make sense inside this conversation: every note must stand on its own.

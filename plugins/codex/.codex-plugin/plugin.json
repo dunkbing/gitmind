@@ -1,0 +1,8 @@
+{
+  "name": "gitmind",
+  "description": "Persistent memory for Codex, stored as Markdown notes in git and shared across your machines and AI apps. Needs the gitmind CLI: https://gitmind.app. Codex runs the hook only after you trust it in /hooks.",
+  "author": { "name": "gitmind", "url": "https://gitmind.app" },
+  "homepage": "https://gitmind.app",
+  "repository": "https://github.com/dunkbing/gitmind",
+  "mcpServers": "./mcp.json"
+}

@@ -25,7 +25,7 @@ import {
 import { checkSecrets } from "../engine/secrets";
 import { ConflictError, type FileChange, Session } from "../repo/git";
 import { remoteFor, repoProvider } from "../repo/provider";
-import { type ProfileFact, buildContext, profile, sessionContext } from "./context";
+import { type ProfileFact, buildContext, handoffPath, profile, sessionContext } from "./context";
 import { type Embedder, embedderFor } from "./embed";
 import { type Fact, type Hit, type Query, Store } from "./store";
 
@@ -348,6 +348,23 @@ export class Workspace extends DurableObject<Env> {
 			out.push(...found.slice(0, 2).map(({ score: _, ...c }) => c));
 		}
 		return out.slice(0, 5);
+	}
+
+	// handoff leaves a note for the project's next session, in any app or
+	// agent: where the work stands and what's next. It replaces the previous
+	// one; empty content deletes it, for work that's done. It returns the
+	// note's path, or "" when there was nothing to delete.
+	async handoff(project: string, content: string, actor: Actor): Promise<string> {
+		const dir = cleanDir(project);
+		if (!dir || dir === "general") throw new Error("project is required: the git repository's directory name");
+		const path = handoffPath(dir);
+		if (!content.trim()) {
+			await this.fresh();
+			return this.store.exists(path) ? this.delete(path, actor) : "";
+		}
+		const by = actor.source ?? "an agent";
+		const body = `${content.trim()}\n\n_Left by ${by}, ${new Date().toISOString().slice(0, 10)}._\n`;
+		return (await this.write({ title: "Handoff", directory: dir, content: body, tags: ["handoff"], overwrite: true }, actor)).path;
 	}
 
 	async delete(id: string, actor: Actor): Promise<string> {

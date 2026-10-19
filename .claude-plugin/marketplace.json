@@ -8,7 +8,7 @@
   "plugins": [
     {
       "name": "gitmind",
-      "source": "./plugin",
+      "source": "./plugins/claude-code",
       "description": "Persistent memory for Claude Code, stored as Markdown notes in git and shared across your machines and AI apps."
     }
   ]

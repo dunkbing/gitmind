@@ -337,6 +337,39 @@ func (a *App) Edit(ctx context.Context, id string, op EditOp) (EditResult, error
 	return res, a.save(ctx, n, "edit")
 }
 
+// HandoffPath is where a project's handoff lives: one note per project,
+// replaced by each session that stops with work unfinished.
+func HandoffPath(project string) string { return project + "/handoff.md" }
+
+// Handoff leaves a note for the project's next session, in any app or
+// agent: where the work stands and what's next. It replaces the previous
+// one; empty content deletes it, for work that's done. It returns the
+// note's path, or "" when there was nothing to delete.
+func (a *App) Handoff(ctx context.Context, project, content string) (string, error) {
+	dir, err := notes.CleanDir(project)
+	if err != nil {
+		return "", err
+	}
+	if dir == "" || dir == "general" {
+		return "", errors.New("project is required: the git repository's directory name")
+	}
+	if strings.TrimSpace(content) == "" {
+		if !a.Store.Exists(HandoffPath(dir)) {
+			return "", nil
+		}
+		return a.Delete(ctx, HandoffPath(dir))
+	}
+	a.mu.Lock()
+	by := a.client
+	a.mu.Unlock()
+	if by == "" {
+		by = "an agent"
+	}
+	body := strings.TrimSpace(content) + fmt.Sprintf("\n\n_Left by %s on %s, %s._\n", by, a.host, time.Now().Format(time.DateOnly))
+	rel, _, err := a.Write(ctx, "Handoff", dir, body, []string{"handoff"}, true)
+	return rel, err
+}
+
 // NewFacts returns the current facts in after that weren't in before.
 func NewFacts(before, after string) []notes.Observation {
 	had := map[notes.Observation]bool{}

@@ -16,6 +16,7 @@ take an optional `workspace` (a team's slug).
 | `project_context` | Your profile (standing `[instruction]` and `[preference]` lines from general and project notes), pinned notes in full, plus an index of a project's notes, general notes and recent activity. For the start of a session; `budget` sets its size. |
 | `write_note` | Create a note. Fails if one with the same title exists in that directory, unless `overwrite: true`. The reply lists possibly overlapping notes, to merge instead of duplicating, and [possibly conflicting facts](/docs/notes/#when-facts-change). |
 | `edit_note` | `append`, `prepend`, `find_replace`, `replace_section` (everything under a heading), or `supersede`: replace a fact (`find_text`) with a new one (`content`, empty to retire it), keeping the old one under `## History` with the date. The reply lists possibly conflicting facts. |
+| `handoff` | Leave the project's next session, in any app or agent, a few lines on where the work stands, what failed and what's next. It replaces the previous handoff and shows at the start of the next session as "Where we left off". Empty content clears it once the work is done. |
 | `move_note` | New directory and/or title; links to the note are updated. |
 | `pin_note` | Show a note in full at every session start, or unpin it. |
 | `delete_note` | Delete a note; history keeps it. |

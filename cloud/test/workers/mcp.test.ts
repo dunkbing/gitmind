@@ -9,7 +9,7 @@ describe("remote MCP endpoint", () => {
 		const { token, refresh } = await connect(alice);
 		expect(refresh).toBeTruthy();
 		expect(await listTools(token)).toEqual([
-			"build_context", "delete_note", "edit_note", "list_notes", "list_workspaces", "move_note",
+			"build_context", "delete_note", "edit_note", "handoff", "list_notes", "list_workspaces", "move_note",
 			"pin_note", "project_context", "read_note", "recent_activity", "search_notes", "write_note",
 		]);
 

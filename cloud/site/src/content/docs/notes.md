@@ -55,6 +55,15 @@ When an agent saves a fact, gitmind looks for current facts of the same
 category, in the same project and in `general/`, that are about the same thing,
 and lists them in its reply so the agent can supersede the outdated one.
 
+## Handoffs
+
+When an agent stops with work unfinished, it leaves a **handoff** with the
+`handoff` tool: a few lines on where the work stands, what failed and what's
+next. It's one note per project (`<project>/handoff.md`), replaced each time.
+The next session in that project, in whichever app or agent, starts with it
+under "Where we left off", so "continue" picks up the work. When the work is
+done, the agent clears it.
+
 ## Pinned and locked
 
 - `pinned: true` shows the note in full at the start of every session. Use it

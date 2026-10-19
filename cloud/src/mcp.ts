@@ -27,6 +27,7 @@ like "from now on..."), gotcha, anti-pattern, setup, task (with status), artifac
 When a fact changes, replace it with edit_note's supersede operation, which keeps the old version under "## History" with
 the date, rather than silently overwriting it. When a save reports possibly conflicting facts, supersede the outdated one.
 Prefer editing an existing note over creating a near-duplicate. Notes marked locked are the user's.
+When you stop with work unfinished, leave a handoff for the next session (in any app): where it stands, what failed, what's next.
 Every tool works on the user's personal workspace unless you pass workspace (see list_workspaces).`;
 
 const workspaceArg = z.string().optional().describe("workspace slug from list_workspaces; omit for the personal workspace");
@@ -196,6 +197,27 @@ function createServer(version: string): McpServer {
 			if (r.addedSection) msg = `Edited ${r.path}: no section "${a.section}" existed, so it was added at the end`;
 			else if (a.operation === "supersede") msg += a.content.trim() ? ": the new fact replaced the old one, which moved to History" : ": the fact moved to History";
 			return text(msg + conflictsText(r.conflicts));
+		},
+	);
+
+	server.registerTool(
+		"handoff",
+		{
+			description:
+				"Leave a handoff for the next session in this project, whichever app or agent it runs in: where the work stands, what failed, " +
+				"what's next. It replaces the previous handoff, and the next session sees it at the start. Call it when you stop with work " +
+				"unfinished; clear it (empty content) when the work is done.",
+			inputSchema: {
+				project: z.string().describe("project name: the git repository's directory name"),
+				content: z.string().describe("a few lines: what you were doing, what failed or is undecided, the next steps; empty to clear the handoff once the work is done"),
+				workspace: workspaceArg,
+			},
+		},
+		async (a) => {
+			const { stub, actor } = await ctx(env(), a.workspace);
+			const path = await stub.handoff(a.project, a.content, actor);
+			if (a.content.trim()) return text(`Saved the handoff in ${path}`);
+			return text(path ? `Cleared the handoff (${path})` : "There was no handoff to clear");
 		},
 	);
 

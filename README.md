@@ -89,7 +89,7 @@ instead:
 ### Claude Code
 
 Install the plugin, which bundles the MCP server, the hooks below, and the
-memory instructions as a skill ([`plugin/`](plugin)):
+memory instructions as a skill ([`plugins/claude-code/`](plugins/claude-code)):
 
 ```
 /plugin install gitmind --marketplace dunkbing/gitmind
@@ -108,16 +108,28 @@ twice. Without plugins, add the pieces yourself:
 `claude mcp add --scope user gitmind -- gitmind`, the hooks below, and
 AGENT_MEMORY.md in `~/.claude/CLAUDE.md`.
 
-### Codex (`~/.codex/config.toml`)
+### Codex
+
+Install the plugin, which bundles the MCP server, the session-start hook and
+the memory skill ([`plugins/codex/`](plugins/codex)):
+
+```bash
+codex plugin marketplace add dunkbing/gitmind
+codex plugin add gitmind@gitmind
+```
+
+Then open `/hooks` in Codex once to trust the hook. `gitmind agents` does
+this, and offers to remove an MCP server or `AGENTS.md` block an earlier
+setup added. Without plugins, add to `~/.codex/config.toml`:
 
 ```toml
 [mcp_servers.gitmind]
 command = "gitmind"
 ```
 
-Then append [AGENT_MEMORY.md](AGENT_MEMORY.md) to `~/.codex/AGENTS.md` so
-Codex knows when to search and save. (The plugin's skill,
-`plugin/skills/memory/SKILL.md`, is the same text; a test keeps them equal.)
+and append [AGENT_MEMORY.md](AGENT_MEMORY.md) to `~/.codex/AGENTS.md`. (Both
+plugins' skill, `plugins/*/skills/memory/SKILL.md`, is the same text; a test
+keeps them equal.)
 
 ### Hooks (Claude Code)
 
@@ -151,8 +163,11 @@ to `~/.claude/settings.json`:
   keeping, and told to save nothing rather than noise. `--threshold N` changes
   the bar.
 
-Agents without hooks (e.g. Codex) can call the `project_context` tool instead,
-as AGENT_MEMORY.md tells them to.
+Codex's plugin has the session-start hook only. Agents without hooks can call
+the `project_context` tool instead, as AGENT_MEMORY.md tells them to.
+
+To check it works, restart your agent in a project and ask it: "What do you
+remember about this project?"
 
 ## Tools
 
@@ -165,6 +180,7 @@ as AGENT_MEMORY.md tells them to.
 | `write_note` | Create a note (the reply lists possibly overlapping notes, to merge instead of duplicating); replacing an existing one needs `overwrite: true` |
 | `pin_note` | Show a note in full at every session start (or unpin it) |
 | `edit_note` | `append`, `prepend`, `find_replace`, `replace_section` (everything under a heading, added if missing), or `supersede` (replace a fact, keeping the old one under `## History` with the date) |
+| `handoff` | Leave the project's next session, in any app, a note on where the work stands and what's next; it replaces the previous one and shows at the start of the next session as "Where we left off". Empty content clears it |
 | `move_note` | New directory and/or title; links to the note are updated, and git history follows the rename |
 | `delete_note` | Delete a note (git history keeps it) |
 | `recent_activity` | Most recently changed notes |
