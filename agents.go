@@ -19,9 +19,11 @@ import (
 
 // agentMemory is the standing instruction for agents (AGENT_MEMORY.md),
 // added to CLAUDE.md and AGENTS.md. Its first line marks it as present.
-//
+// Windows checkouts may give the file CRLF line endings.
+var agentMemory = strings.ReplaceAll(agentMemoryFile, "\r\n", "\n")
+
 //go:embed AGENT_MEMORY.md
-var agentMemory string
+var agentMemoryFile string
 
 // pluginMarketplace is the GitHub repository whose marketplace holds
 // gitmind's Claude Code plugin (plugin/), installed as pluginID.

@@ -290,7 +290,7 @@ func TestPluginSkillMatchesAgentMemory(t *testing.T) {
 	if len(parts) != 2 || !strings.HasPrefix(skill, "---\n") {
 		t.Fatalf("SKILL.md has no frontmatter:\n%s", skill)
 	}
-	if parts[1] != crlf.Replace(agentMemory) {
+	if parts[1] != agentMemory {
 		t.Error("plugin/skills/memory/SKILL.md differs from AGENT_MEMORY.md; copy AGENT_MEMORY.md under its frontmatter")
 	}
 }
