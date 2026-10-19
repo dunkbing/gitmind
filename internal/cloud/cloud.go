@@ -140,11 +140,21 @@ func Login(ctx context.Context, base string, open func(string), prompt func(cont
 			http.NotFound(w, r)
 			return
 		}
-		results <- r.URL.Query()
+		// Answer the browser before handing over the code: sign-in may finish
+		// and shut the server down right after.
 		fmt.Fprintln(w, "gitmind is signed in. You can close this tab and return to the terminal.")
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+		results <- r.URL.Query()
 	})}
 	go srv.Serve(ln)
-	defer srv.Close()
+	defer func() {
+		// Let a response in flight finish, briefly.
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		srv.Shutdown(shutdownCtx)
+	}()
 	if prompt != nil {
 		promptCtx, stopPrompt := context.WithCancel(ctx)
 		stopped := make(chan struct{})
