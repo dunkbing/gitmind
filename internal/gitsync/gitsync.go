@@ -23,7 +23,15 @@ import (
 	"golang.org/x/text/unicode/norm"
 )
 
-type Repo struct{ Dir string }
+type Repo struct {
+	Dir string
+	// Guard, when set, is taken before the git lock by steps that rewrite
+	// working files (Sync's commit and merge); the caller's edits use it too.
+	Guard func(ctx context.Context) (func(), error)
+}
+
+// lockWait bounds how long a call waits for the git lock.
+const lockWait = 30 * time.Second
 
 type Result struct {
 	Remote    bool     // an "origin" remote is configured
@@ -181,7 +189,7 @@ func (r *Repo) SetRemote(ctx context.Context, url string) error {
 // Commit stages paths (everything when none are given) and commits them,
 // reporting whether there was anything to commit.
 func (r *Repo) Commit(ctx context.Context, msg string, paths ...string) (bool, error) {
-	unlock, err := r.lock()
+	unlock, err := r.lock(ctx)
 	if err != nil {
 		return false, err
 	}
@@ -189,29 +197,28 @@ func (r *Repo) Commit(ctx context.Context, msg string, paths ...string) (bool, e
 	return r.commit(ctx, msg, paths...)
 }
 
-// Push sends local commits to origin, merging first if origin moved on.
+// Push sends local commits to origin, merging first if origin moved on. The
+// network transfer holds no lock.
 func (r *Repo) Push(ctx context.Context) error {
-	unlock, err := r.lock()
-	if err != nil {
-		return err
-	}
-	defer unlock()
 	if !r.hasRemote(ctx) {
 		return nil
 	}
-	_, err = r.push(ctx)
+	_, err := r.push(ctx)
 	return err
 }
 
-// Sync commits stray local edits, pulls from origin, then pushes.
+// Sync commits stray local edits, pulls from origin, then pushes. Only the
+// local steps (commit, merge) hold locks; the network transfers don't, so a
+// slow remote never blocks other processes' edits.
 func (r *Repo) Sync(ctx context.Context, msg string) (Result, error) {
 	var res Result
-	unlock, err := r.lock()
+	unlock, err := r.exclusive(ctx)
 	if err != nil {
 		return res, err
 	}
-	defer unlock()
-	if res.Committed, err = r.commit(ctx, msg); err != nil {
+	res.Committed, err = r.commit(ctx, msg)
+	unlock()
+	if err != nil {
 		return res, err
 	}
 	if res.Remote = r.hasRemote(ctx); !res.Remote {
@@ -257,6 +264,7 @@ func (r *Repo) merging(ctx context.Context) bool {
 	return err == nil
 }
 
+// pull fetches origin's branch with no lock held, then merges it locally.
 func (r *Repo) pull(ctx context.Context) (bool, []string, error) {
 	branch, err := r.branch(ctx)
 	if err != nil {
@@ -269,10 +277,18 @@ func (r *Repo) pull(ctx context.Context) (bool, []string, error) {
 	if heads == "" {
 		return false, nil, nil // remote branch doesn't exist yet; the push creates it
 	}
+	if _, err := r.run(ctx, "fetch", "-q", "origin", "+refs/heads/"+branch+":refs/remotes/origin/"+branch); err != nil {
+		return false, nil, err
+	}
+	unlock, err := r.exclusive(ctx)
+	if err != nil {
+		return false, nil, err
+	}
+	defer unlock()
 	before := r.head(ctx)
 	// Unrelated histories happen when a machine started its own notes repo
 	// before connecting to an existing remote; merge them rather than fail.
-	args := append(r.identity(ctx), "pull", "-q", "--no-rebase", "--no-edit", "--allow-unrelated-histories", "origin", branch)
+	args := append(r.identity(ctx), "merge", "-q", "--no-edit", "--allow-unrelated-histories", "origin/"+branch)
 	if _, err := r.run(ctx, args...); err != nil {
 		conflicts := r.conflicts(ctx)
 		if len(conflicts) == 0 {
@@ -415,8 +431,33 @@ func (r *Repo) runRaw(ctx context.Context, args ...string) (string, error) {
 
 // lock serializes git operations across every gitmind process sharing the
 // repository (e.g. several agent sessions on one machine).
-func (r *Repo) lock() (func(), error) {
-	return lockfile.Lock(filepath.Join(r.Dir, ".gitmind", "git.lock"))
+func (r *Repo) lock(ctx context.Context) (func(), error) {
+	ctx, cancel := context.WithTimeout(ctx, lockWait)
+	defer cancel()
+	unlock, err := lockfile.Lock(ctx, filepath.Join(r.Dir, ".gitmind", "git.lock"))
+	if err != nil {
+		return nil, fmt.Errorf("another gitmind process is busy with git, try again: %w", err)
+	}
+	return unlock, nil
+}
+
+// exclusive is lock preceded by Guard, for steps that rewrite working files
+// (in the same order as an edit: Guard, then git). Callers that already hold
+// Guard use lock directly.
+func (r *Repo) exclusive(ctx context.Context) (func(), error) {
+	if r.Guard == nil {
+		return r.lock(ctx)
+	}
+	unguard, err := r.Guard(ctx)
+	if err != nil {
+		return nil, err
+	}
+	unlock, err := r.lock(ctx)
+	if err != nil {
+		unguard()
+		return nil, err
+	}
+	return func() { unlock(); unguard() }, nil
 }
 
 type gitError struct {

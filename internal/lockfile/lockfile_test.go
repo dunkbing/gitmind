@@ -1,6 +1,7 @@
 package lockfile
 
 import (
+	"context"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -9,7 +10,7 @@ import (
 
 func TestLockExcludes(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "sub", "x.lock")
-	unlock, err := Lock(path)
+	unlock, err := Lock(context.Background(), path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -17,7 +18,7 @@ func TestLockExcludes(t *testing.T) {
 	got := false
 	done := make(chan struct{})
 	go func() {
-		u, err := Lock(path)
+		u, err := Lock(context.Background(), path)
 		if err != nil {
 			t.Error(err)
 		}
@@ -38,5 +39,19 @@ func TestLockExcludes(t *testing.T) {
 	case <-done:
 	case <-time.After(5 * time.Second):
 		t.Fatal("the second Lock never got the lock")
+	}
+}
+
+func TestLockGivesUpWhenContextEnds(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "x.lock")
+	unlock, err := Lock(context.Background(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	if _, err := Lock(ctx, path); err == nil {
+		t.Fatal("Lock succeeded while the lock was held")
 	}
 }

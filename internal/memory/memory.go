@@ -27,6 +27,10 @@ import (
 // pushDelay batches a burst of writes into a single push.
 var pushDelay = 5 * time.Second
 
+// lockWait bounds how long a call waits for the notes lock. Locks are only
+// held for local file and git work, so waiting longer means something is stuck.
+const lockWait = 30 * time.Second
+
 type App struct {
 	Store notes.Store
 	Index *index.Index
@@ -65,6 +69,7 @@ func Open(dir string, logger *log.Logger) (*App, error) {
 		Log:   logger,
 		host:  strings.Split(host, ".")[0],
 	}
+	a.Repo.Guard = a.writeLock
 	if _, err := a.reindex(context.Background()); err != nil {
 		ix.Close()
 		return nil, fmt.Errorf("index notes: %w", err)
@@ -176,7 +181,7 @@ func (a *App) Resolve(id string) (string, error) {
 // directory is replaced only when overwrite is set. It reports whether the
 // note is new.
 func (a *App) Write(ctx context.Context, title, dir, content string, tags []string, overwrite bool) (string, bool, error) {
-	unlock, err := a.writeLock()
+	unlock, err := a.writeLock(ctx)
 	if err != nil {
 		return "", false, err
 	}
@@ -233,7 +238,7 @@ type ImportResult struct {
 // commit isn't a "memory:" change, since the user runs imports themselves.
 func (a *App) Import(ctx context.Context, source string, ns []notes.Note) (ImportResult, error) {
 	res := ImportResult{Skipped: map[string]string{}}
-	unlock, err := a.writeLock()
+	unlock, err := a.writeLock(ctx)
 	if err != nil {
 		return res, err
 	}
@@ -284,7 +289,7 @@ type EditResult struct {
 }
 
 func (a *App) Edit(ctx context.Context, id string, op EditOp) (EditResult, error) {
-	unlock, err := a.writeLock()
+	unlock, err := a.writeLock(ctx)
 	if err != nil {
 		return EditResult{}, err
 	}
@@ -444,7 +449,7 @@ func (a *App) Conflicts(rel string, facts []notes.Observation) ([]Conflict, erro
 // changes, and links by path are pointed at the new path. It returns the new
 // path and the other notes whose links were updated.
 func (a *App) Move(ctx context.Context, id string, dir *string, title string) (string, []string, error) {
-	unlock, err := a.writeLock()
+	unlock, err := a.writeLock(ctx)
 	if err != nil {
 		return "", nil, err
 	}
@@ -559,7 +564,7 @@ func (a *App) Move(ctx context.Context, id string, dir *string, title string) (s
 // Pin marks a note to be shown in full at the start of every session, or
 // unpins it.
 func (a *App) Pin(ctx context.Context, id string, pinned bool) (string, error) {
-	unlock, err := a.writeLock()
+	unlock, err := a.writeLock(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -601,7 +606,7 @@ func lockedError(rel string) error {
 }
 
 func (a *App) Delete(ctx context.Context, id string) (string, error) {
-	unlock, err := a.writeLock()
+	unlock, err := a.writeLock(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -629,13 +634,6 @@ func (a *App) Delete(ctx context.Context, id string) (string, error) {
 // Sync commits edits made outside gitmind (e.g. in Obsidian), pulls,
 // pushes, and reindexes whatever changed.
 func (a *App) Sync(ctx context.Context) (gitsync.Result, error) {
-	// A pull rewrites notes, so it must not interleave with an edit's
-	// read-modify-write.
-	unlock, err := a.writeLock()
-	if err != nil {
-		return gitsync.Result{}, err
-	}
-	defer unlock()
 	a.mu.Lock()
 	if a.pushTimer != nil {
 		a.pushTimer.Stop()
@@ -643,7 +641,17 @@ func (a *App) Sync(ctx context.Context) (gitsync.Result, error) {
 	a.pushPending = false
 	a.mu.Unlock()
 
+	// The repository's guard is the write lock, taken only around the local
+	// steps, so the network round trips never block an edit.
 	res, err := a.Repo.Sync(ctx, a.message("sync", "local edits"))
+	unlock, lerr := a.writeLock(ctx)
+	if lerr != nil {
+		if err == nil {
+			err = lerr
+		}
+		return res, err
+	}
+	defer unlock()
 	if _, ierr := a.reindex(ctx); ierr != nil && err == nil {
 		err = ierr
 	}
@@ -653,8 +661,14 @@ func (a *App) Sync(ctx context.Context) (gitsync.Result, error) {
 // writeLock serializes every read-modify-write of notes, across goroutines
 // and across gitmind processes sharing the repository, so concurrent edits
 // can't overwrite each other.
-func (a *App) writeLock() (func(), error) {
-	return lockfile.Lock(filepath.Join(a.Store.Root, ".gitmind", "write.lock"))
+func (a *App) writeLock(ctx context.Context) (func(), error) {
+	ctx, cancel := context.WithTimeout(ctx, lockWait)
+	defer cancel()
+	unlock, err := lockfile.Lock(ctx, filepath.Join(a.Store.Root, ".gitmind", "write.lock"))
+	if err != nil {
+		return nil, fmt.Errorf("another gitmind process is busy with the notes, try again: %w", err)
+	}
+	return unlock, nil
 }
 
 func (a *App) save(ctx context.Context, n notes.Note, verb string) error {
