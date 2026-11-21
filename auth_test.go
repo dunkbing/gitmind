@@ -232,22 +232,24 @@ func TestSwitchingKeepsNotes(t *testing.T) {
 		t.Error("the backup lost the old notes")
 	}
 	files := map[string]string{
-		"myapp/deploy.md":           "only here\n",                                                    // only in the old folder: copied
-		"general/same.md":           "---\ntitle: Same\ncreated: 2026-10-18T05:00:00Z\n---\n\nsame\n", // same note (only created differs): left alone
-		"general/prefs.md":          "new version\n",                                                  // differs: new location wins...
-		"general/prefs-previous.md": "old version\n",                                                  // ...and the old version is kept beside it
+		"myapp/deploy.md": "only here\n",                                                    // only in the old folder: copied
+		"general/same.md": "---\ntitle: Same\ncreated: 2026-10-18T05:00:00Z\n---\n\nsame\n", // same note (only created differs): left alone
 	}
 	for path, want := range files {
 		if data, err := os.ReadFile(filepath.Join(dir, path)); err != nil || string(data) != want {
 			t.Errorf("%s = %q, %v; want %q", path, data, err, want)
 		}
 	}
+	// A differing note is merged: the new location's lines first, then the old folder's.
+	if data, _ := os.ReadFile(filepath.Join(dir, "general", "prefs.md")); !strings.HasSuffix(string(data), "\n\nnew version\nold version\n") {
+		t.Errorf("general/prefs.md = %q, want both versions merged", data)
+	}
 	// And it was all pushed to the new location.
 	pushed := run(t, root, "git", "--git-dir", remote, "ls-tree", "-r", "--name-only", "main")
-	if _, err := os.Stat(filepath.Join(dir, "general", "same-previous.md")); err == nil {
-		t.Error("a note differing only in its created time was kept as a duplicate")
+	if m, _ := filepath.Glob(filepath.Join(dir, "*", "*-previous.md")); len(m) > 0 {
+		t.Errorf("duplicates were kept instead of merged: %v", m)
 	}
-	for _, path := range []string{"myapp/deploy.md", "general/prefs-previous.md"} {
+	for _, path := range []string{"myapp/deploy.md", "general/prefs.md"} {
 		if !strings.Contains(pushed, path) {
 			t.Errorf("%s wasn't pushed:\n%s", path, pushed)
 		}

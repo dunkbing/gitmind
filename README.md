@@ -80,7 +80,7 @@ gitmind itself, registered as git's credential helper for that repository only.
 These flags skip the question; without a terminal, setup uses gitmind.app.
 Running `setup` again and choosing somewhere else switches the notes folder
 over: it's backed up as `~/.gitmind.bak-DATE`, and notes missing from the new
-place are copied in (differing ones are kept as `NAME-previous.md`).
+place are copied in (a note both places have, with different content, gains the lines and tags the old one had; nothing is removed).
 
 `setup` then offers to add gitmind to Claude Code and Codex, asking before
 each change. `gitmind agents` does just that step again. To do it by hand
