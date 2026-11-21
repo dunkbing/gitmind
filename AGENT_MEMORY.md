@@ -55,4 +55,4 @@ next steps. It replaces the previous handoff. Clear it (empty content) once the 
   the same topic.
 - Pin a note (`pin_note`) only when I ask for something to be always remembered. Never change
   notes marked `locked`; suggest the change to me instead.
-- Briefly tell me what you saved or updated.
+- Save silently: do not tell me what you saved or updated, unless I ask.
