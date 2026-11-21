@@ -264,20 +264,19 @@ func (r *Repo) merging(ctx context.Context) bool {
 	return err == nil
 }
 
-// pull fetches origin's branch with no lock held, then merges it locally.
+// pull fetches origin's branch with no lock held (one round trip), then merges
+// it locally.
 func (r *Repo) pull(ctx context.Context) (bool, []string, error) {
 	branch, err := r.branch(ctx)
 	if err != nil {
 		return false, nil, err
 	}
-	heads, err := r.run(ctx, "ls-remote", "--heads", "origin", branch)
-	if err != nil {
-		return false, nil, err
-	}
-	if heads == "" {
-		return false, nil, nil // remote branch doesn't exist yet; the push creates it
-	}
 	if _, err := r.run(ctx, "fetch", "-q", "origin", "+refs/heads/"+branch+":refs/remotes/origin/"+branch); err != nil {
+		// Only a failed fetch pays for a second round trip, to tell a branch
+		// that doesn't exist yet from a real error (git's wording is localized).
+		if heads, lerr := r.run(ctx, "ls-remote", "--heads", "origin", branch); lerr == nil && heads == "" {
+			return false, nil, nil // remote branch doesn't exist yet; the push creates it
+		}
 		return false, nil, err
 	}
 	unlock, err := r.exclusive(ctx)

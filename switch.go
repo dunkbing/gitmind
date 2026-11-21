@@ -26,6 +26,7 @@ func switchRepo(ctx context.Context, dir, remote string, config []string) error 
 	if err := os.Rename(dir, backup); err != nil {
 		return err
 	}
+	fmt.Println("Downloading the notes from the new location… (can take a minute)")
 	if err := gitsync.Init(ctx, dir, remote, config...); err != nil {
 		// Put the old folder back, so a failed switch changes nothing.
 		os.RemoveAll(dir)
@@ -47,6 +48,7 @@ func switchRepo(ctx context.Context, dir, remote string, config []string) error 
 			return err
 		}
 		defer app.Close()
+		fmt.Println("Uploading the merged notes… (can take a minute)")
 		if _, err := app.Sync(ctx); err != nil {
 			return err
 		}

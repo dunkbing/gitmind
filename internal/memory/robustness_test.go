@@ -333,19 +333,19 @@ func TestWriteDuringSlowSync(t *testing.T) {
 		t.Skip("no git")
 	}
 	shim := t.TempDir()
-	script := "#!/bin/sh\nfor a in \"$@\"; do [ \"$a\" = ls-remote ] && sleep 3; done\nexec " + realGit + " \"$@\"\n"
+	script := "#!/bin/sh\nfor a in \"$@\"; do [ \"$a\" = fetch ] && sleep 3; done\nexec " + realGit + " \"$@\"\n"
 	if err := os.WriteFile(filepath.Join(shim, "git"), []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", shim+string(os.PathListSeparator)+os.Getenv("PATH"))
 
-	// Push first so origin has the branch and ls-remote is reached.
+	// Push first so origin has the branch and the fetch is reached.
 	if err := a.Repo.Push(ctx); err != nil {
 		t.Fatal(err)
 	}
 	done := make(chan error, 1)
 	go func() { _, err := a.Sync(ctx); done <- err }()
-	time.Sleep(500 * time.Millisecond) // the sync is now inside the slow ls-remote
+	time.Sleep(500 * time.Millisecond) // the sync is now inside the slow fetch
 	start := time.Now()
 	if _, _, err := a.Write(ctx, "Second", "", "y", nil, false); err != nil {
 		t.Fatal(err)

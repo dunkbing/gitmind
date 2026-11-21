@@ -274,6 +274,7 @@ func attachRepo(ctx context.Context, dir, remote string, config []string, confir
 		return err
 	}
 	defer app.Close()
+	fmt.Println("Syncing the notes… (can take a minute)")
 	_, err = app.Sync(ctx)
 	return err
 }
