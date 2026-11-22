@@ -30,6 +30,11 @@ type Repo struct {
 	Guard func(ctx context.Context) (func(), error)
 }
 
+// waitDelay is how long to keep waiting for git's output after it was killed
+// at its deadline, in case a child of git (ssh) still holds the output pipe;
+// without it such a call can outlive its deadline and keep the git lock held.
+const waitDelay = 3 * time.Second
+
 // lockWait bounds how long a call waits for the git lock.
 const lockWait = 30 * time.Second
 
@@ -92,6 +97,7 @@ func Init(ctx context.Context, dir, remote string, config ...string) error {
 			}
 			cmd := exec.CommandContext(ctx, "git", append(args, "clone", "-q", remote, dir)...)
 			cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+			cmd.WaitDelay = waitDelay
 			if out, err := cmd.CombinedOutput(); err != nil {
 				return fmt.Errorf("git clone: %v: %s", err, strings.TrimSpace(string(out)))
 			}
@@ -416,6 +422,7 @@ func (r *Repo) run(ctx context.Context, args ...string) (string, error) {
 func (r *Repo) runRaw(ctx context.Context, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = r.Dir
+	cmd.WaitDelay = waitDelay
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_MERGE_AUTOEDIT=no")
 	// Warnings on stderr must not end up in output that gets parsed (e.g.
 	// a list of conflicted files); they're only reported with errors.
