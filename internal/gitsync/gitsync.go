@@ -96,7 +96,7 @@ func Init(ctx context.Context, dir, remote string, config ...string) error {
 				args = append(args, "-c", kv)
 			}
 			cmd := exec.CommandContext(ctx, "git", append(args, "clone", "-q", remote, dir)...)
-			cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+			cmd.Env = append(append(os.Environ(), "GIT_TERMINAL_PROMPT=0"), r.sshEnv(ctx, []string{"clone"})...)
 			cmd.WaitDelay = waitDelay
 			if out, err := cmd.CombinedOutput(); err != nil {
 				return fmt.Errorf("git clone: %v: %s", err, strings.TrimSpace(string(out)))
@@ -423,7 +423,7 @@ func (r *Repo) runRaw(ctx context.Context, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = r.Dir
 	cmd.WaitDelay = waitDelay
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_MERGE_AUTOEDIT=no")
+	cmd.Env = append(append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_MERGE_AUTOEDIT=no"), r.sshEnv(ctx, args)...)
 	// Warnings on stderr must not end up in output that gets parsed (e.g.
 	// a list of conflicted files); they're only reported with errors.
 	var stdout, stderr strings.Builder
@@ -433,6 +433,37 @@ func (r *Repo) runRaw(ctx context.Context, args ...string) (string, error) {
 		return "", &gitError{args: args, out: out, err: err}
 	}
 	return stdout.String(), nil
+}
+
+// sshEnv makes git's SSH connections fail fast instead of hanging on a dead
+// network or a passphrase prompt, for the commands that use the network. It
+// leaves alone any SSH command the user has configured.
+func (r *Repo) sshEnv(ctx context.Context, args []string) []string {
+	switch args[indexOfCommand(args)] {
+	case "fetch", "push", "ls-remote", "clone", "pull":
+	default:
+		return nil
+	}
+	if os.Getenv("GIT_SSH_COMMAND") != "" || os.Getenv("GIT_SSH") != "" {
+		return nil
+	}
+	if out, err := exec.CommandContext(ctx, "git", "-C", r.Dir, "config", "core.sshCommand").Output(); err == nil && len(out) > 0 {
+		return nil
+	}
+	return []string{"GIT_SSH_COMMAND=ssh -o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=15 -o ServerAliveCountMax=3"}
+}
+
+// indexOfCommand finds the git subcommand: the first argument that isn't
+// part of leading "-c key=value" options.
+func indexOfCommand(args []string) int {
+	for i := 0; i < len(args); i++ {
+		if args[i] == "-c" {
+			i++
+			continue
+		}
+		return i
+	}
+	return 0
 }
 
 // lock serializes git operations across every gitmind process sharing the
