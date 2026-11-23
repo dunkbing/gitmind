@@ -23,7 +23,7 @@ const nudgeText = `Before you finish: this session did substantial work. If it p
 	`note rather than duplicating). Worth saving: decisions and their reasons, the user's preferences and corrections, ` +
 	`gotchas and root causes, setup or deploy knowledge not in the repo. Not worth saving: routine steps, anything ` +
 	`already in the code or git history, unconfirmed suggestions, secrets. If the work is unfinished, also leave a ` +
-	`handoff (the handoff tool): where it stands and what's next. If nothing qualifies, just stop; don't save noise.`
+	`handoff (the handoff tool, arguments project = the repository's directory name and content = where it stands and what's next). If nothing qualifies, just stop; don't save noise.`
 
 // Nudge decides whether to remind the agent to save to memory before it
 // stops: when at least threshold tool calls happened since the last memory
