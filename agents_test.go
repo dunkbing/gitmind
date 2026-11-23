@@ -80,7 +80,7 @@ func TestAgentSetup(t *testing.T) {
 		t.Errorf("other settings were lost: %v", got)
 	}
 	s := read(t, settings)
-	for _, want := range []string{`"fff notify"`, `"'/opt/go bin/gitmind' context"`, `"'/opt/go bin/gitmind' nudge"`, `"SessionStart"`} {
+	for _, want := range []string{`"fff notify"`, `"'/opt/go bin/gitmind' context"`, `"SessionStart"`} {
 		if !strings.Contains(s, want) {
 			t.Errorf("settings.json is missing %s:\n%s", want, s)
 		}

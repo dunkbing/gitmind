@@ -8,7 +8,6 @@ import (
 	"regexp"
 	"sort"
 	"strings"
-	"time"
 	"unicode"
 
 	"github.com/dunkbing/gitmind/internal/index"
@@ -263,9 +262,6 @@ func (a *App) SessionContext(project string, budget int) (string, error) {
 	}
 
 	shown := map[string]bool{}
-	if project != "" {
-		a.writeHandoff(&b, project, shown)
-	}
 
 	// Pinned notes fill up to three quarters of the budget, so the index
 	// always fits; pinned notes that don't fit are listed in the index.
@@ -310,25 +306,6 @@ func (a *App) SessionContext(project string, budget int) (string, error) {
 	}
 	writeIndex(&b, "\n## Recently updated elsewhere\n", others, shown, budget, maxOtherLines, "recent_activity")
 	return b.String(), nil
-}
-
-// writeHandoff shows the project's handoff, where the last session left
-// off, in full.
-func (a *App) writeHandoff(b *strings.Builder, project string, shown map[string]bool) {
-	rel := HandoffPath(project)
-	n, mod, err := a.Store.Read(rel)
-	if err != nil {
-		return
-	}
-	body := strings.TrimSpace(n.Body)
-	if r := []rune(body); len(r) > maxNoteChars {
-		body = string(r[:maxNoteChars]) + fmt.Sprintf("\n… (truncated; read_note %s for the rest)", rel)
-	}
-	fmt.Fprintf(b, "\n## Where we left off (%s)\n", mod.Format(time.DateOnly))
-	b.WriteString("The last session's handoff. When the user asks to continue, start from it. When you stop with work " +
-		"unfinished, replace it with handoff; when the work is done, clear it (handoff with empty content).\n\n")
-	b.WriteString(body + "\n")
-	shown[rel] = true
 }
 
 // writeIndex lists notes not shown yet under heading, one line each until

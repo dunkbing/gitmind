@@ -24,8 +24,7 @@ Write facts as "- [category] fact #tag" with categories such as decision, prefer
 like "from now on..."), gotcha, anti-pattern, setup, task (with status), artifact (with a link).
 When a fact changes, replace it with edit_note's supersede operation, which keeps the old version under "## History" with
 the date, rather than silently overwriting it. When a save reports possibly conflicting facts, supersede the outdated one.
-Prefer editing an existing note over creating a near-duplicate. Notes marked locked are the user's.
-When you stop with work unfinished, leave a handoff for the next session (in any app): where it stands, what failed, what's next.`
+Prefer editing an existing note over creating a near-duplicate. Notes marked locked are the user's.`
 
 // SearchArgs are search_notes' arguments.
 type SearchArgs struct {
@@ -70,11 +69,6 @@ type writeArgs struct {
 	Pinned    bool     `json:"pinned,omitempty" jsonschema:"show this note in full at the start of every session; only for things the user wants always remembered"`
 }
 
-type pinArgs struct {
-	Identifier string `json:"identifier" jsonschema:"note path, permalink or exact title"`
-	Unpin      bool   `json:"unpin,omitempty" jsonschema:"remove the pin instead"`
-}
-
 type editArgs struct {
 	Identifier           string `json:"identifier" jsonschema:"note path, permalink or exact title"`
 	Operation            string `json:"operation" jsonschema:"append, prepend, find_replace, replace_section, or supersede to replace a fact that changed"`
@@ -84,36 +78,9 @@ type editArgs struct {
 	Section              string `json:"section,omitempty" jsonschema:"heading text whose content to replace (replace_section only); its subsections are replaced too"`
 }
 
-type handoffArgs struct {
-	Project string `json:"project" jsonschema:"project name: the git repository's directory name"`
-	Content string `json:"content" jsonschema:"a few lines: what you were doing, what failed or is undecided, the next steps; empty to clear the handoff once the work is done"`
-}
-
-type moveArgs struct {
-	Identifier string  `json:"identifier" jsonschema:"note path, permalink or exact title"`
-	Directory  *string `json:"directory,omitempty" jsonschema:"new directory; omit to keep the current one, \"\" for the top level"`
-	Title      string  `json:"title,omitempty" jsonschema:"new title, which also renames the file; omit to keep it"`
-}
-
-type contextArgs struct {
-	Identifier string `json:"identifier" jsonschema:"note path, permalink or exact title"`
-	Depth      int    `json:"depth,omitempty" jsonschema:"1 for direct links (default), 2 to also list notes two links away"`
-}
-
-type projectArgs struct {
-	Project string `json:"project,omitempty" jsonschema:"project name: the git repository's directory name; omit for general notes only"`
-	Budget  int    `json:"budget,omitempty" jsonschema:"rough size limit in characters (default 12000, at most 30000)"`
-}
-
-type recentArgs struct {
-	Limit int `json:"limit,omitempty" jsonschema:"maximum number of notes (default 10)"`
-}
-
 type listArgs struct {
 	Directory string `json:"directory,omitempty" jsonschema:"only list notes under this directory"`
 }
-
-type noArgs struct{}
 
 func New(app *memory.App, version string, opts ...Option) *mcp.Server {
 	var o options
@@ -173,39 +140,6 @@ func New(app *memory.App, version string, opts ...Option) *mcp.Server {
 	})
 
 	mcp.AddTool(s, &mcp.Tool{
-		Name: "build_context",
-		Description: "Read a note together with its neighbourhood: the notes it links to, the notes linking to it " +
-			"(with a one-line summary of each), and links to notes not written yet. Use it to follow a topic across notes.",
-	}, func(ctx context.Context, _ *mcp.CallToolRequest, in contextArgs) (*mcp.CallToolResult, any, error) {
-		out, err := app.BuildContext(in.Identifier, in.Depth)
-		if err != nil {
-			return nil, nil, err
-		}
-		return text(out), nil, nil
-	})
-
-	mcp.AddTool(s, &mcp.Tool{
-		Name: "project_context",
-		Description: "Load what memory knows about a project: the user's profile (standing instructions and preferences), " +
-			"pinned notes, and an index of the project's notes, general notes and recent activity. " +
-			"Call it at the start of a session, unless that context was already provided.",
-	}, func(ctx context.Context, _ *mcp.CallToolRequest, in projectArgs) (*mcp.CallToolResult, any, error) {
-		dir, err := notes.CleanDir(in.Project)
-		if err != nil {
-			return nil, nil, err
-		}
-		budget := in.Budget
-		if budget <= 0 {
-			budget = 12000
-		}
-		out, err := app.SessionContext(dir, min(budget, 30000))
-		if err != nil {
-			return nil, nil, err
-		}
-		return text(out), nil, nil
-	})
-
-	mcp.AddTool(s, &mcp.Tool{
 		Name: "write_note",
 		Description: "Create a memory note. Fails if a note with the same title already exists in that directory, " +
 			"unless overwrite is true; to add to an existing note, use edit_note instead.",
@@ -230,21 +164,6 @@ func New(app *memory.App, version string, opts ...Option) *mcp.Server {
 				"and delete the new one:\n" + formatHits("", similar)
 		}
 		return text(msg), nil, nil
-	})
-
-	mcp.AddTool(s, &mcp.Tool{
-		Name: "pin_note",
-		Description: "Pin a note so it's shown in full at the start of every session (or unpin it). " +
-			"Use sparingly, for things the user wants always remembered; everything else appears as a one-line index entry.",
-	}, func(ctx context.Context, _ *mcp.CallToolRequest, in pinArgs) (*mcp.CallToolResult, any, error) {
-		rel, err := app.Pin(ctx, in.Identifier, !in.Unpin)
-		if err != nil {
-			return nil, nil, err
-		}
-		if in.Unpin {
-			return text("Unpinned " + rel), nil, nil
-		}
-		return text("Pinned " + rel), nil, nil
 	})
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -273,66 +192,6 @@ func New(app *memory.App, version string, opts ...Option) *mcp.Server {
 	})
 
 	mcp.AddTool(s, &mcp.Tool{
-		Name: "handoff",
-		Description: "Leave a handoff for the next session in this project, whichever app or agent it runs in: " +
-			"where the work stands, what failed, what's next. It replaces the previous handoff, and the next session sees it " +
-			"at the start. Call it when you stop with work unfinished; clear it (empty content) when the work is done.",
-	}, func(ctx context.Context, _ *mcp.CallToolRequest, in handoffArgs) (*mcp.CallToolResult, any, error) {
-		rel, err := app.Handoff(ctx, in.Project, in.Content)
-		if err != nil {
-			return nil, nil, err
-		}
-		switch {
-		case strings.TrimSpace(in.Content) != "":
-			return text("Saved the handoff in " + rel), nil, nil
-		case rel != "":
-			return text("Cleared the handoff (" + rel + ")"), nil, nil
-		}
-		return text("There was no handoff to clear"), nil, nil
-	})
-
-	mcp.AddTool(s, &mcp.Tool{
-		Name: "move_note",
-		Description: "Move a note to another directory and/or give it a new title (which renames the file). " +
-			"Links to it in other notes are updated so they keep working.",
-	}, func(ctx context.Context, _ *mcp.CallToolRequest, in moveArgs) (*mcp.CallToolResult, any, error) {
-		if in.Directory == nil && strings.TrimSpace(in.Title) == "" {
-			return nil, nil, fmt.Errorf("give a new directory, a new title, or both")
-		}
-		to, updated, err := app.Move(ctx, in.Identifier, in.Directory, in.Title)
-		if err != nil {
-			return nil, nil, err
-		}
-		msg := "Moved to " + to
-		if len(updated) > 0 {
-			msg += "; updated links in " + strings.Join(updated, ", ")
-		}
-		return text(msg), nil, nil
-	})
-
-	mcp.AddTool(s, &mcp.Tool{
-		Name:        "delete_note",
-		Description: "Delete a memory note. Git history keeps the old content.",
-	}, func(ctx context.Context, _ *mcp.CallToolRequest, in readArgs) (*mcp.CallToolResult, any, error) {
-		rel, err := app.Delete(ctx, in.Identifier)
-		if err != nil {
-			return nil, nil, err
-		}
-		return text("Deleted " + rel), nil, nil
-	})
-
-	mcp.AddTool(s, &mcp.Tool{
-		Name:        "recent_activity",
-		Description: "List the most recently changed memory notes, newest first. Useful when resuming work.",
-	}, func(ctx context.Context, _ *mcp.CallToolRequest, in recentArgs) (*mcp.CallToolResult, any, error) {
-		hits, err := app.Index.Recent(limit(in.Limit, 10))
-		if err != nil {
-			return nil, nil, err
-		}
-		return text(formatHits("Memory is empty.", hits)), nil, nil
-	})
-
-	mcp.AddTool(s, &mcp.Tool{
 		Name:        "list_notes",
 		Description: "List memory notes by path, optionally under one directory.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in listArgs) (*mcp.CallToolResult, any, error) {
@@ -345,17 +204,6 @@ func New(app *memory.App, version string, opts ...Option) *mcp.Server {
 			return nil, nil, err
 		}
 		return text(formatHits("No notes found.", hits)), nil, nil
-	})
-
-	mcp.AddTool(s, &mcp.Tool{
-		Name:        "sync_memory",
-		Description: "Pull notes saved from other machines and push local ones. Runs automatically at startup and after writes.",
-	}, func(ctx context.Context, _ *mcp.CallToolRequest, _ noArgs) (*mcp.CallToolResult, any, error) {
-		res, err := app.Sync(ctx)
-		if err != nil {
-			return nil, nil, err
-		}
-		return text(res.String()), nil, nil
 	})
 
 	return s

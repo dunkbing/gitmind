@@ -464,7 +464,7 @@ func (a *agentSetup) claudeMCP(ctx context.Context) error {
 	return nil
 }
 
-// claudeHooks adds the SessionStart (recall) and Stop (save nudge) hooks to
+// claudeHooks adds the SessionStart (recall) hook to
 // ~/.claude/settings.json, keeping everything else in the file.
 func (a *agentSetup) claudeHooks(ctx context.Context) error {
 	path := a.claudeSettings()
@@ -479,7 +479,7 @@ func (a *agentSetup) claudeHooks(ctx context.Context) error {
 	want := []struct {
 		event, sub string
 		timeout    int
-	}{{"SessionStart", "context", 30}, {"Stop", "nudge", 10}}
+	}{{"SessionStart", "context", 30}}
 	var missing []string
 	for _, w := range want {
 		if !hasHook(hooks[w.event], "gitmind", w.sub) {
@@ -490,7 +490,7 @@ func (a *agentSetup) claudeHooks(ctx context.Context) error {
 		fmt.Fprintln(a.out, "✓ Claude Code already has gitmind's hooks")
 		return nil
 	}
-	ok, err := a.ask(ctx, "Add Claude Code hooks that load your notes when a session starts and remind the agent to save before it stops?")
+	ok, err := a.ask(ctx, "Add a Claude Code hook that loads your notes when a session starts?")
 	if err != nil || !ok {
 		return err
 	}

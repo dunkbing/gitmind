@@ -81,15 +81,13 @@ Anything already in place is left alone. Run `gitmind agents` any time to do
 this again (for example after installing Codex), or `gitmind agents --yes` to
 skip the questions. Check the result with `claude plugin list`.
 
-The plugin's hooks:
+The plugin's hook:
 
 - **`gitmind context`** (SessionStart) starts every session with your
   profile (your standing `[instruction]` and `[preference]` lines, from
   `general/` and the current project), then pinned notes and an index of the
   current project's notes (the project is the git repository's name). It's
   capped in size and in lines per section, so it stays small as memory grows.
-- **`gitmind nudge`** (Stop) reminds the agent once to save what it learned,
-  after a stretch of 10 or more tool calls with no memory write.
 
 ## Import Claude Code's memories
 
@@ -116,5 +114,5 @@ Edits you make by hand (in Obsidian, say) are committed on the next sync.
 ## Commands
 
 ```
-gitmind [--dir DIR] setup | agents | import claude-code | update | auth | serve | context | nudge | init REMOTE | sync | reindex | search QUERY | recent [N] | version
+gitmind [--dir DIR] setup | agents | import claude-code | update | auth | serve | context | init REMOTE | sync | reindex | search QUERY | recent [N] | version
 ```

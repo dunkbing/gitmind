@@ -133,23 +133,20 @@ keeps them equal.)
 
 ### Hooks (Claude Code)
 
-Two hooks make memory automatic. The plugin includes them; without it, add
-to `~/.claude/settings.json`:
+A hook loads your notes at the start of every session. The plugin includes it;
+without it, add to `~/.claude/settings.json`:
 
 ```json
 {
   "hooks": {
     "SessionStart": [
       { "hooks": [{ "type": "command", "command": "gitmind context", "timeout": 30 }] }
-    ],
-    "Stop": [
-      { "hooks": [{ "type": "command", "command": "gitmind nudge", "timeout": 10 }] }
     ]
   }
 }
 ```
 
-- **`gitmind context`** (recall) starts with your **profile**: the
+`gitmind context` starts with your **profile**: the
   `[instruction]` and `[preference]` lines of your `general/` notes and the
   current project's notes (not ones under a `## History` heading), newest
   first, at most 40 and a quarter of the budget. Then pinned notes in full,
@@ -158,13 +155,8 @@ to `~/.claude/settings.json`:
   checkout's name inside a worktree). Output stays under Claude Code's
   10,000-character hook limit; whatever doesn't fit is counted, with a pointer
   to `list_notes`.
-- **`gitmind nudge`** (capture): when the agent is about to stop after 10 or
-  more tool calls with no memory write, it's reminded once to save what's worth
-  keeping, and told to save nothing rather than noise. `--threshold N` changes
-  the bar.
-
-Codex's plugin has the session-start hook only. Agents without hooks can call
-the `project_context` tool instead, as AGENT_MEMORY.md tells them to.
+Codex's plugin has the same session-start hook. Agents without hooks can call
+`list_notes` or `search_notes` at the start of a session, as AGENT_MEMORY.md tells them to.
 
 To check it works, restart your agent in a project and ask it: "What do you
 remember about this project?"
@@ -175,17 +167,9 @@ remember about this project?"
 |---|---|
 | `search_notes` | Full-text search (SQLite FTS5, BM25; title > tags > body; notes with every word first, recent notes slightly favoured), filterable by directory, tags (frontmatter or inline `#tags`), observation category (`[decision]`, shown line by line) and update date (`since: 7d`); facts under `## History` only with `include_history` |
 | `read_note` | Read a note by path, permalink or title, with its backlinks |
-| `build_context` | A note plus the notes it links to and from, and links to notes not written yet (`depth: 2` goes one step further) |
-| `project_context` | Your profile, pinned notes, and an index of a project's notes, general notes and recent activity, for the start of a session (`budget` sets the size) |
 | `write_note` | Create a note (the reply lists possibly overlapping notes, to merge instead of duplicating); replacing an existing one needs `overwrite: true` |
-| `pin_note` | Show a note in full at every session start (or unpin it) |
 | `edit_note` | `append`, `prepend`, `find_replace`, `replace_section` (everything under a heading, added if missing), or `supersede` (replace a fact, keeping the old one under `## History` with the date) |
-| `handoff` | Leave the project's next session, in any app, a note on where the work stands and what's next; it replaces the previous one and shows at the start of the next session as "Where we left off". Empty content clears it |
-| `move_note` | New directory and/or title; links to the note are updated, and git history follows the rename |
-| `delete_note` | Delete a note (git history keeps it) |
-| `recent_activity` | Most recently changed notes |
 | `list_notes` | List notes, optionally under one directory |
-| `sync_memory` | Pull and push now |
 
 ## Syncing
 
@@ -203,7 +187,7 @@ remember about this project?"
 ## CLI
 
 ```
-gitmind [--dir DIR] [--sync-interval 3m] [setup|agents|import claude-code|update|auth|serve|context|nudge|init [REMOTE]|sync|reindex|search QUERY|recent [N]|version]
+gitmind [--dir DIR] [--sync-interval 3m] [setup|agents|import claude-code|update|auth|serve|context|init [REMOTE]|sync|reindex|search QUERY|recent [N]|version]
 ```
 
 `gitmind import claude-code` copies the memories Claude Code saved on this

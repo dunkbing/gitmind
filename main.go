@@ -23,7 +23,6 @@ import (
 	"github.com/dunkbing/gitmind/internal/cloud"
 	"github.com/dunkbing/gitmind/internal/github"
 	"github.com/dunkbing/gitmind/internal/gitsync"
-	"github.com/dunkbing/gitmind/internal/hooks"
 	"github.com/dunkbing/gitmind/internal/index"
 	"github.com/dunkbing/gitmind/internal/memory"
 	"github.com/dunkbing/gitmind/internal/notes"
@@ -72,9 +71,6 @@ Commands:
                        --cwd DIR       project directory (default: hook cwd, else .)
                        --project NAME  memory directory to use instead
                        --budget BYTES  rough size limit (default 8000)
-  nudge              for a Stop hook: after substantial work with no memory
-                     write, remind the agent once to save what it learned
-                       --threshold N   tool calls that count as substantial (default 10)
   init [REMOTE]      create the notes repository, cloning REMOTE when given;
                      on an existing repository, adds REMOTE as origin
   sync               commit local edits, pull and push
@@ -115,7 +111,8 @@ func main() {
 	case "context":
 		sessionContext(*dir, args)
 	case "nudge":
-		nudge(*dir, args)
+		// Removed: the Stop hook earlier setups installed still calls it, so
+		// it stays as a command that does nothing.
 	case "auth":
 		err = authCmd(ctx, args)
 	case "setup":
@@ -291,32 +288,6 @@ func sessionContext(dir string, args []string) {
 }
 
 const hookOutputLimit = 9500
-
-// nudge implements a Claude Code Stop hook. Like sessionContext it never
-// fails the hook: problems go to stderr and the agent is allowed to stop.
-func nudge(dir string, args []string) {
-	fs := flag.NewFlagSet("nudge", flag.ExitOnError)
-	threshold := fs.Int("threshold", 10, "tool calls since the last memory write that count as substantial work")
-	fs.Parse(args)
-
-	var input hooks.StopInput
-	if err := json.Unmarshal(hookInput(), &input); err != nil {
-		return
-	}
-	reason, err := hooks.Nudge(input, filepath.Join(dir, ".gitmind", "nudges"), *threshold)
-	if err != nil {
-		log.Print(err)
-		return
-	}
-	if reason == "" {
-		return
-	}
-	// additionalContext continues the session with non-error feedback.
-	out, _ := json.Marshal(map[string]any{
-		"hookSpecificOutput": map[string]string{"hookEventName": "Stop", "additionalContext": reason},
-	})
-	fmt.Println(string(out))
-}
 
 // hookInput reads the JSON a Claude Code hook receives on stdin, if stdin is
 // piped, giving up after two seconds.
